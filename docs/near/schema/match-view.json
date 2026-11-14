@@ -1,0 +1,105 @@
+{
+  "id": "7",
+  "status": "Active",
+  "players": [
+    "alice.testnet",
+    "bob.testnet"
+  ],
+  "tokens": [
+    "kuleci:1",
+    "ayarci:2"
+  ],
+  "revealed": [
+    true,
+    true
+  ],
+  "game": {
+    "round": 2,
+    "score": [
+      1,
+      0
+    ],
+    "hp": [
+      3,
+      4
+    ],
+    "max_hp": 4,
+    "heal_cut": false,
+    "items": [
+      [
+        "Loupe",
+        "Hacksaw"
+      ],
+      [
+        "Pipe",
+        "Flask"
+      ]
+    ],
+    "load": {
+      "announced_live": 2,
+      "announced_blank": 2,
+      "remaining": 3,
+      "live_left": 2,
+      "blank_left": 1,
+      "fixed": [
+        "Live",
+        null,
+        null
+      ]
+    },
+    "turn": 0,
+    "shackled": null,
+    "shackle_broke_this_turn": false,
+    "saw_active": false
+  },
+  "reveal_deadline_ms": 1731590060000,
+  "deadline_ms": 1731590105000,
+  "winner": null,
+  "seq": 7,
+  "log": [
+    {
+      "kind": "LoadStarted",
+      "live": 2,
+      "blank": 2,
+      "total": 4
+    },
+    {
+      "kind": "ItemsDealt",
+      "player": 0,
+      "items": [
+        "Loupe",
+        "Hacksaw"
+      ]
+    },
+    {
+      "kind": "ItemsDealt",
+      "player": 1,
+      "items": [
+        "Pipe",
+        "Flask"
+      ]
+    },
+    {
+      "kind": "Shot",
+      "player": 1,
+      "target": "Opponent",
+      "shell": "Live",
+      "damage": 1
+    },
+    {
+      "kind": "Ejected",
+      "shell": "Live"
+    },
+    {
+      "kind": "ItemUsed",
+      "player": 0,
+      "item": "Loupe",
+      "slot": 0,
+      "result": {
+        "kind": "Private",
+        "pos": 0,
+        "shell": "Live"
+      }
+    }
+  ]
+}
