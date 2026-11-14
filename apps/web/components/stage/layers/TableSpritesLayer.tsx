@@ -1,25 +1,28 @@
 "use client";
 
+import { useState } from "react";
 import type { Item, Shell } from "@/lib/nearTypes";
 import type { StageVisualState } from "../types";
 import { ItemIcon } from "./ItemIcons";
 
-/** Anchors aligned to the felt in /art/scene.webp (felt spans x 5-95%, y 71-93%). */
-const RIVAL_HP_ANCHOR = { x: 0.09, y: 0.8 };
-const LOCAL_HP_ANCHOR = { x: 0.91, y: 0.8 };
-const SHELL_RACK_ANCHOR = { x: 0.5, y: 0.8 };
-const SCORE_NOTCH_ANCHOR = { x: 0.5, y: 0.73 };
+/** Layout anchors (fractions of the 16:9 stage). */
+const RIVAL_AVATAR = { x: 0.15, y: 0.15 };
+const LOCAL_HP_ANCHOR = { x: 0.16, y: 0.86 };
+const CHAMBER_ANCHOR = { x: 0.29, y: 0.47 };
+const DECK_ANCHOR = { x: 0.7, y: 0.47 };
+const SCORE_NOTCH_ANCHOR = { x: 0.5, y: 0.34 };
+/** Fanned hands; rotation in degrees. */
 const RIVAL_ITEM_SLOTS = [
-  { x: 0.17, y: 0.76 },
-  { x: 0.3, y: 0.76 },
-  { x: 0.7, y: 0.76 },
-  { x: 0.83, y: 0.76 },
+  { x: 0.4, y: 0.12, rot: 6 },
+  { x: 0.467, y: 0.115, rot: 2 },
+  { x: 0.533, y: 0.115, rot: -2 },
+  { x: 0.6, y: 0.12, rot: -6 },
 ] as const;
 const LOCAL_ITEM_SLOTS = [
-  { x: 0.17, y: 0.88 },
-  { x: 0.3, y: 0.88 },
-  { x: 0.7, y: 0.88 },
-  { x: 0.83, y: 0.88 },
+  { x: 0.38, y: 0.83, rot: -8 },
+  { x: 0.46, y: 0.82, rot: -3 },
+  { x: 0.54, y: 0.82, rot: 3 },
+  { x: 0.62, y: 0.83, rot: 8 },
 ] as const;
 
 export interface TableSpritesLayerProps {
@@ -42,15 +45,82 @@ const ITEM_NAMES: Record<Item, string> = {
   Tincture: "Tincture",
 };
 
-/** Glowing bulbs standing on the table + best-of-3 notches carved beside them. */
-function SideTokens({
+
+const ITEM_ART: Partial<Record<Item, string>> = {
+  Lockpick: "/art/2d/item-lockpick.png",
+  Flask: "/art/2d/item-flask.png",
+  Shackle: "/art/2d/item-shackle.png",
+  Hacksaw: "/art/2d/item-hacksaw.png",
+  Tincture: "/art/2d/item-tincture.png",
+  Ticker: "/art/2d/item-ticker.png",
+};
+
+/** Face-up card: parchment frame, item art in the window, name in the banner. Fills its (container-sized) parent. */
+function ItemCard({ item, dim = false }: { item: Item; dim?: boolean }) {
+  const art = ITEM_ART[item];
+  return (
+    <span
+      className={`relative block w-full shadow-[0_6px_10px_rgba(0,0,0,0.55)] ${dim ? "opacity-60" : ""}`}
+      style={{ aspectRatio: "321 / 480", containerType: "inline-size" }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/art/2d/card-frame.png"
+        alt=""
+        draggable={false}
+        className="absolute inset-0 h-full w-full select-none"
+      />
+      <span
+        className="absolute flex items-center justify-center"
+        style={{ left: "12%", top: "17%", width: "76%", height: "58%" }}
+      >
+        {art ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={art} alt="" draggable={false} className="h-full w-full object-contain" />
+        ) : (
+          <ItemIcon item={item} className="h-full w-full" />
+        )}
+      </span>
+      <span
+        className="absolute flex items-center justify-center font-serif font-bold tracking-wider whitespace-nowrap text-[#2a1d10] uppercase"
+        style={{ left: "22%", top: "79%", width: "56%", height: "11%", fontSize: "9cqw" }}
+      >
+        {ITEM_NAMES[item]}
+      </span>
+    </span>
+  );
+}
+
+const POP_CSS =
+  "@keyframes rolet-hp-pop{0%{transform:scale(1.7);filter:brightness(1.6) saturate(2)}60%{transform:scale(.85)}100%{transform:scale(1)}}" +
+  "@keyframes rolet-turn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(229,195,120,.0)}50%{box-shadow:0 0 14px 4px rgba(229,195,120,.7)}}";
+
+function Heart({ on, cut, pop, color }: { on: boolean; cut: boolean; pop: boolean; color: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 22"
+      className="h-full w-full"
+      style={pop ? { animation: "rolet-hp-pop 0.5s ease-out" } : undefined}
+    >
+      <path
+        d="M12 21C5 15.5 1.5 12 1.5 7.6 1.5 4.4 4 2 7 2c2 0 3.8 1 5 2.8C13.2 3 15 2 17 2c3 0 5.5 2.4 5.5 5.6C22.5 12 19 15.5 12 21z"
+        fill={on ? (cut ? "#e61919" : color) : "rgba(10,8,6,0.55)"}
+        stroke={on ? "#2a0f0a" : "#3a3228"}
+        strokeWidth="1.4"
+        style={on ? { filter: `drop-shadow(0 2px 2px rgba(0,0,0,0.6))` } : undefined}
+      />
+      {on && <ellipse cx="7.5" cy="7" rx="2.2" ry="1.3" fill="rgba(255,255,255,0.5)" transform="rotate(-30 7.5 7)" />}
+    </svg>
+  );
+}
+
+/** HP hearts + best-of-3 round pips. */
+function HpTokens({
   label,
   hp,
   maxHp,
   healCut,
   wins,
-  xPct,
-  yPct,
   tone,
 }: {
   label: string;
@@ -58,36 +128,28 @@ function SideTokens({
   maxHp: number;
   healCut: boolean;
   wins: number;
-  xPct: number;
-  yPct: number;
   tone: "warm" | "red";
 }) {
-  const lit = tone === "warm" ? "#f2c46a" : "#e04545";
-  const glow = tone === "warm" ? "rgba(242,196,106,0.75)" : "rgba(224,69,69,0.75)";
+  const lit = tone === "warm" ? "#e8b44a" : "#d93b3b";
+  const [prev, setPrev] = useState(hp);
+  const [pop, setPop] = useState({ lo: 0, hi: 0, k: 0 });
+  if (hp !== prev) {
+    setPrev(hp);
+    if (hp < prev) setPop({ lo: hp, hi: prev, k: pop.k + 1 });
+  }
   return (
-    <div
-      className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
-      style={{ left: `${xPct}%`, top: `${yPct}%` }}
-    >
-      <div className="flex gap-2">
+    <div className="pointer-events-none flex flex-col items-start gap-1.5">
+      <div className="flex gap-1.5">
         {Array.from({ length: maxHp }, (_, i) => {
           const on = i < hp;
-          const cut = on && healCut && i === 0;
+          const popped = i >= pop.lo && i < pop.hi && pop.k > 0;
           return (
-            <div key={i} className="relative" title={`${label} HP ${i + 1}`}>
-              <div
-                className="h-5 w-3 rounded-t-full rounded-b-[3px] transition-all duration-300"
-                style={{
-                  background: on
-                    ? `radial-gradient(circle at 35% 30%, #fff8e0 0%, ${cut ? "#e61919" : lit} 55%, #5a3a10 100%)`
-                    : "linear-gradient(#1a1713, #0d0b09)",
-                  boxShadow: on
-                    ? `0 0 10px 2px ${cut ? "rgba(230,25,25,0.7)" : glow}, 0 4px 5px rgba(0,0,0,0.7)`
-                    : "0 3px 4px rgba(0,0,0,0.7)",
-                  border: on ? "none" : "1px solid #2a241c",
-                }}
-              />
-              <div className="mx-auto h-1 w-2 bg-[#3a3228]" />
+            <div
+              key={`${i}-${popped ? pop.k : 0}`}
+              className="h-[clamp(14px,2.4vw,34px)] w-[clamp(14px,2.4vw,34px)]"
+              title={`${label} HP ${i + 1}`}
+            >
+              <Heart on={on} cut={on && healCut && i === 0} pop={popped} color={lit} />
             </div>
           );
         })}
@@ -96,10 +158,11 @@ function SideTokens({
         {[0, 1].map((n) => (
           <span
             key={n}
-            className="block h-[3px] w-5 rounded-full"
+            className="block h-1.5 w-1.5 rotate-45 rounded-[1px]"
             style={{
-              background: n < wins ? "#e5c378" : "#2a241c",
-              boxShadow: n < wins ? "0 0 6px rgba(229,195,120,0.7)" : "none",
+              background: n < wins ? "#e5c378" : "rgba(10,8,6,0.55)",
+              boxShadow: n < wins ? "0 0 6px rgba(229,195,120,0.8)" : "none",
+              border: "1px solid #4a3a20",
             }}
           />
         ))}
@@ -114,7 +177,7 @@ function ChamberRing({ visual }: { visual: StageVisualState }) {
   return (
     <svg
       viewBox="-26 -26 52 52"
-      className="h-12 w-12 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+      className="h-[clamp(40px,5vw,72px)] w-[clamp(40px,5vw,72px)] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
       role="img"
       aria-label={`${visual.remaining} of 8 chambers loaded`}
     >
@@ -172,69 +235,100 @@ export function TableSpritesLayer({
   const oppItems = visual.items[opp];
   const pickingSteal = lockpickSlot !== null;
   const active = visual.phase === "active";
-  const yourTurn = active && visual.turn === you;
   const rivalTurn = active && visual.turn === opp;
 
   return (
     <div data-testid="table-sprites-layer" className="pointer-events-none absolute inset-0 z-30">
-      {/* Table lighting: warm pool on your side, red cast on the rival's */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-[34%] transition-opacity duration-700"
-        style={{
-          opacity: yourTurn ? 1 : 0,
-          background:
-            "radial-gradient(ellipse 60% 70% at 50% 100%, rgba(255,190,100,0.20) 0%, transparent 72%)",
-        }}
-      />
-      <div
-        className="absolute inset-x-0 top-[66%] h-[16%] transition-opacity duration-700"
-        style={{
-          opacity: rivalTurn ? 1 : 0,
-          background:
-            "radial-gradient(ellipse 60% 80% at 50% 30%, rgba(220,30,30,0.22) 0%, transparent 72%)",
-        }}
-      />
+      <style>{POP_CSS}</style>
 
-      {/* Chamber ring by the revolver */}
+      {/* Rival: round avatar with gold ring + HP */}
       <div
-        className="absolute -translate-x-1/2 -translate-y-1/2"
-        style={{ left: `${(SHELL_RACK_ANCHOR.x + 0.13) * 100}%`, top: `${(SHELL_RACK_ANCHOR.y + 0.05) * 100}%` }}
+        className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-3"
+        style={{ left: `${RIVAL_AVATAR.x * 100}%`, top: `${RIVAL_AVATAR.y * 100}%` }}
       >
-        <ChamberRing visual={visual} />
+        <div
+          className="aspect-square overflow-hidden rounded-full border-[3px] border-[#d4a84b] bg-[#14110d] shadow-[0_4px_10px_rgba(0,0,0,0.6)]"
+          style={{
+            width: "clamp(36px,5.2vw,80px)",
+            animation: rivalTurn ? "rolet-turn-pulse 1.6s ease-in-out infinite" : "none",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/art/2d/dealer-face.png"
+            alt="Dealer"
+            draggable={false}
+            className="h-full w-full select-none object-cover"
+          />
+        </div>
+        <HpTokens
+          label="RIVAL"
+          hp={visual.hp[opp]}
+          maxHp={visual.maxHp}
+          healCut={visual.healCut[opp]}
+          wins={visual.score[opp]}
+          tone="red"
+        />
       </div>
 
-      {/* Hacksaw marker (subtle) */}
+      {/* Center: cylinder + live/blank counts, deck pile */}
+      <div
+        className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
+        style={{ left: `${CHAMBER_ANCHOR.x * 100}%`, top: `${CHAMBER_ANCHOR.y * 100}%` }}
+      >
+        <ChamberRing visual={visual} />
+        <span className="font-mono text-[10px] tracking-[0.15em] whitespace-nowrap text-[#f4e9cc] uppercase [text-shadow:0_1px_2px_#000]">
+          <span className="text-[#ff7a6a]">{visual.announcedLive} live</span>
+          {" · "}
+          <span className="text-[#9fc8e0]">{visual.announcedBlank} blank</span>
+        </span>
+      </div>
+      <div
+        className="absolute -translate-x-1/2 -translate-y-1/2"
+        style={{ left: `${DECK_ANCHOR.x * 100}%`, top: `${DECK_ANCHOR.y * 100}%`, width: "6%" }}
+        aria-hidden="true"
+      >
+        <div className="relative w-full" style={{ aspectRatio: "332 / 480" }}>
+          {[0, 1, 2].map((n) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={n}
+              src="/art/2d/card-back.png"
+              alt=""
+              draggable={false}
+              className="absolute h-full w-full select-none drop-shadow-[0_2px_3px_rgba(0,0,0,0.6)]"
+              style={{ left: n * 2, top: -n * 2 }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Hacksaw marker */}
       {visual.sawActive && (
         <div
-          className="absolute -translate-x-1/2 font-mono text-[10px] tracking-[0.2em] text-[#e04545]/90 uppercase"
-          style={{ left: `${SCORE_NOTCH_ANCHOR.x * 100}%`, top: `${SCORE_NOTCH_ANCHOR.y * 100 - 1}%` }}
+          className="absolute -translate-x-1/2 font-mono text-[10px] tracking-[0.2em] text-[#ff8a7a] uppercase [text-shadow:0_1px_2px_#000]"
+          style={{ left: `${SCORE_NOTCH_ANCHOR.x * 100}%`, top: `${SCORE_NOTCH_ANCHOR.y * 100}%` }}
         >
           sawn-off · 2×
         </div>
       )}
 
-      <SideTokens
-        label="RIVAL"
-        hp={visual.hp[opp]}
-        maxHp={visual.maxHp}
-        healCut={visual.healCut[opp]}
-        wins={visual.score[opp]}
-        xPct={RIVAL_HP_ANCHOR.x * 100}
-        yPct={RIVAL_HP_ANCHOR.y * 100}
-        tone="red"
-      />
-      <SideTokens
-        label="YOU"
-        hp={visual.hp[you]}
-        maxHp={visual.maxHp}
-        healCut={visual.healCut[you]}
-        wins={visual.score[you]}
-        xPct={LOCAL_HP_ANCHOR.x * 100}
-        yPct={LOCAL_HP_ANCHOR.y * 100}
-        tone="warm"
-      />
+      {/* Player HP */}
+      <div
+        className="absolute -translate-x-1/2 -translate-y-1/2"
+        style={{ left: `${LOCAL_HP_ANCHOR.x * 100}%`, top: `${LOCAL_HP_ANCHOR.y * 100}%` }}
+      >
+        <HpTokens
+          label="YOU"
+          hp={visual.hp[you]}
+          maxHp={visual.maxHp}
+          healCut={visual.healCut[you]}
+          wins={visual.score[you]}
+          tone="warm"
+        />
+      </div>
 
-      {/* Rival items */}
+      {/* Rival items: face-down cards along the top edge */}
       {RIVAL_ITEM_SLOTS.map((pos, idx) => {
         const item = oppItems[idx];
         const stealable = pickingSteal && item !== undefined && item !== "Lockpick";
@@ -246,27 +340,35 @@ export function TableSpritesLayer({
             onClick={() => {
               if (stealable) onSelectStealSlot?.(idx);
             }}
-            className={`absolute flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition ${
+            className={`absolute flex items-center justify-center rounded-md transition ${
               stealable
                 ? "pointer-events-auto cursor-pointer drop-shadow-[0_0_10px_rgba(229,195,120,0.9)] hover:scale-110"
                 : "pointer-events-none"
             }`}
-            style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
+            style={{
+              left: `${pos.x * 100}%`,
+              top: `${pos.y * 100}%`,
+              width: "7%",
+              transform: `translate(-50%, -50%) rotate(${pos.rot}deg)`,
+            }}
             title={item ? `${item}${stealable ? " (steal)" : ""}` : "Empty slot"}
           >
             {item ? (
-              <ItemIcon
-                item={item}
-                className="h-16 w-16 -rotate-6 opacity-90"
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src="/art/2d/card-back.png"
+                alt=""
+                draggable={false}
+                className="block w-full select-none drop-shadow-[0_4px_5px_rgba(0,0,0,0.6)]"
               />
             ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-[#2a241c]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-black/40" />
             )}
           </button>
         );
       })}
 
-      {/* Your items */}
+      {/* Your items: face-up fan */}
       {LOCAL_ITEM_SLOTS.map((pos, idx) => {
         const item = localItems[idx];
         const usable = canAct && !pickingSteal && item !== undefined;
@@ -279,33 +381,31 @@ export function TableSpritesLayer({
             onClick={() => {
               if (usable) onUseItem?.(idx);
             }}
-            className={`absolute flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition duration-200 ${
+            className={`absolute group flex items-center justify-center rounded-md transition-transform duration-200 ${
               usable
-                ? "pointer-events-auto cursor-pointer hover:-translate-y-[60%] hover:scale-110"
+                ? "pointer-events-auto cursor-pointer hover:z-10"
                 : "pointer-events-none"
             }`}
-            style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
+            style={{
+              left: `${pos.x * 100}%`,
+              top: `${pos.y * 100}%`,
+              width: "10%",
+              transform: `translate(-50%, -50%) rotate(${pos.rot}deg)`,
+            }}
             title={item ? `Use ${ITEM_NAMES[item]}` : "Empty slot"}
           >
             {item ? (
-              <>
-                {(usable || selected) && (
-                  <span
-                    className="absolute inset-1 rounded-full"
-                    style={{
-                      background: `radial-gradient(circle, rgba(242,196,106,${selected ? 0.5 : 0.22}) 0%, transparent 70%)`,
-                    }}
-                  />
-                )}
-                <ItemIcon
-                  item={item}
-                  className={`relative h-20 w-20 rotate-3 ${
-                    usable || selected ? "" : "opacity-60"
-                  }`}
-                />
-              </>
+              <span
+                className={`flex w-full transition duration-200 ${
+                  usable ? "group-hover:-translate-y-4 group-hover:scale-105" : ""
+                } ${selected ? "-translate-y-4 drop-shadow-[0_0_12px_rgba(229,195,120,0.9)]" : ""} ${
+                  usable && !selected ? "drop-shadow-[0_0_8px_rgba(242,196,106,0.35)]" : ""
+                }`}
+              >
+                <ItemCard item={item} dim={!(usable || selected)} />
+              </span>
             ) : (
-              <span className="h-2 w-2 rounded-full bg-[#2a241c]" />
+              <span className="h-2 w-2 rounded-full bg-black/40" />
             )}
           </button>
         );

@@ -15,21 +15,11 @@ const HIT_FLASH_CSS = "@keyframes rolet-hit-flash{0%{opacity:1}100%{opacity:0}}"
 
 export function FxLayer({ fx, aim, paused = false }: FxLayerProps) {
   const selfTension = aim < -0.6 ? Math.min(1, (-aim - 0.6) / 0.4) : 0;
-  const vignetteOpacity = 0.45 + selfTension * 0.42;
+  const vignetteOpacity = 0.3 + selfTension * 0.42;
 
   return (
     <div data-testid="fx-layer" className="pointer-events-none absolute inset-0 z-50 overflow-hidden">
       <style>{HIT_FLASH_CSS}</style>
-      {/* Swinging lamp light cone & pool */}
-      <div
-        className="absolute inset-0 mix-blend-screen"
-        style={{
-          background:
-            "radial-gradient(ellipse 46% 40% at 50% 42%, rgba(235, 192, 118, 0.14) 0%, rgba(198, 161, 91, 0.05) 45%, transparent 75%)",
-          animation: paused ? "none" : "rolet-cone-flicker 5.4s ease-in-out infinite",
-        }}
-      />
-
       {/* Base vignette + deepened self-aim pulse */}
       <div
         className="absolute inset-0 transition-opacity duration-200"
@@ -49,17 +39,6 @@ export function FxLayer({ fx, aim, paused = false }: FxLayerProps) {
           style={{
             background: "radial-gradient(ellipse at center, rgba(200,20,20,0.25) 0%, rgba(160,0,0,0.55) 100%)",
             animation: paused ? "none" : "rolet-hit-flash 0.45s ease-out forwards",
-          }}
-        />
-      )}
-
-      {/* Muzzle flash */}
-      {fx.muzzleFlash && (
-        <div
-          className="absolute inset-0 mix-blend-screen"
-          style={{
-            background:
-              "radial-gradient(circle at 50% 56%, rgba(255, 240, 200, 0.92) 0%, rgba(245, 158, 11, 0.55) 28%, transparent 62%)",
           }}
         />
       )}
