@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { StageHudProps, StageVisualState } from "../types";
 
 export interface HudLayerComponentProps {
@@ -10,8 +11,17 @@ export interface HudLayerComponentProps {
   deadlineSecondsLeft?: number | null;
 }
 
+function SpeakerIcon({ muted }: { muted: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor" fillOpacity="0.25" />
+      {muted ? <path d="M17 9l5 6M22 9l-5 6" /> : <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />}
+    </svg>
+  );
+}
+
 /**
- * L6: React DOM HUD overlay (turn/round/shells bar, drag-to-aim split zones, Lockpick prompt, mute).
+ * L6: Minimal HUD: subtle turn text, speaker icon, aim glows, lockpick prompt, errors.
  */
 export function HudLayer({
   visual,
@@ -22,127 +32,111 @@ export function HudLayer({
 }: HudLayerComponentProps) {
   const isYourTurn = visual.turn === visual.you && visual.phase === "active";
   const aiming = hud.aimState.active;
+  const zone = hud.aimState.zone;
+  const [hasActed, setHasActed] = useState(false);
+
+  useEffect(() => {
+    if (aiming || hud.lockpickSlot !== null || hud.txPhase !== "idle") setHasActed(true);
+  }, [aiming, hud.lockpickSlot, hud.txPhase]);
+
+  const waiting = hud.txPhase === "sent" || hud.txPhase === "holding";
+  const showHint = hud.canAct && !hasActed && !aiming && hud.lockpickSlot === null;
 
   return (
     <div data-testid="hud-layer" className="pointer-events-none absolute inset-0 z-[60] flex flex-col justify-between p-3 sm:p-4">
-      {/* Top HUD bar */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="pointer-events-auto flex items-center gap-3 border border-[#c6a15b]/35 bg-[#0a0a0a]/85 px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase">
-          <span className={isYourTurn ? "font-bold text-[#52c41a]" : "text-[#e5c378]"}>
-            {visual.phase === "finished"
-              ? visual.winner === visual.you
-                ? "YOU WIN"
-                : "YOU LOSE"
-              : isYourTurn
-                ? "YOUR TURN"
-                : "RIVAL'S TURN"}
-          </span>
-          <span className="text-[#5c5c5c]">|</span>
-          <span className="text-[#eaeaea]">ROUND {visual.round}</span>
-          <span className="text-[#5c5c5c]">|</span>
-          <span className="text-[#c6a15b]">
-            {visual.remaining}/8 CHAMBERS
-          </span>
-          {visual.sawActive && (
-            <>
-              <span className="text-[#5c5c5c]">|</span>
-              <span className="font-bold text-[#e61919]">HACKSAW ACTIVE (2x)</span>
-            </>
+      <div className="flex items-start justify-between gap-3">
+        <div className="font-mono text-[10px] tracking-[0.3em] uppercase">
+          {visual.phase === "finished" ? null : isYourTurn ? (
+            <span className="text-[#f2c46a]/80">Your turn</span>
+          ) : (
+            <span className="text-[#e04545]/70">Rival&apos;s turn</span>
           )}
+          <span className="ml-3 text-[#6b6354]">Round {visual.round}</span>
         </div>
 
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-3">
           {deadlineSecondsLeft !== null && (
-            <div
-              className={`border px-2.5 py-1 font-mono text-[11px] tracking-[0.14em] ${
-                deadlineSecondsLeft <= 10
-                  ? "border-[#e61919] bg-[#2a0909]/90 text-[#ff8080]"
-                  : "border-[#3a3a3a] bg-[#0a0a0a]/85 text-[#9a9a9a]"
+            <span
+              className={`font-mono text-[11px] tracking-[0.14em] ${
+                deadlineSecondsLeft <= 10 ? "text-[#ff8080]" : "text-[#9a9a9a]"
               }`}
             >
               {deadlineSecondsLeft}s
-            </div>
+            </span>
           )}
-
-          {hud.statusLabel && (
-            <div className="border border-[#3a3a3a] bg-[#0a0a0a]/85 px-2.5 py-1 font-mono text-[10px] tracking-[0.14em] text-[#9a9a9a] uppercase">
-              {hud.statusLabel}
-            </div>
-          )}
-
           <button
             type="button"
             onClick={hud.onToggleMute}
-            className="cursor-pointer border border-[#c6a15b]/40 bg-[#0a0a0a]/85 px-2.5 py-1 font-mono text-[10px] tracking-[0.14em] text-[#c6a15b] uppercase hover:border-[#e5c378]"
+            aria-label={hud.muted ? "Unmute sound" : "Mute sound"}
+            title={hud.muted ? "Sound off" : "Sound on"}
+            className="cursor-pointer text-[#c6a15b]/50 transition hover:text-[#e5c378]"
           >
-            {hud.muted ? "SOUND: OFF" : "SOUND: ON"}
+            <SpeakerIcon muted={hud.muted} />
           </button>
         </div>
       </div>
 
-      {/* Aim split-zone overlay while dragging / aiming with keyboard */}
+      {/* Aim overlay: soft glows toward top (rival) / bottom (you) */}
       {aiming && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col justify-between py-14 px-8">
+        <div className="pointer-events-none absolute inset-0">
           <div
-            className={`mx-auto border px-4 py-1.5 font-mono text-xs tracking-[0.18em] uppercase transition ${
-              hud.aimState.zone === "opp"
-                ? hud.aimState.canConfirm
-                  ? "border-[#e61919] bg-[#3b0b0b]/90 text-[#fff]"
-                  : "border-[#c6a15b] bg-[#1c160d]/85 text-[#e5c378]"
-                : "border-[#3a3a3a] bg-[#0a0a0a]/65 text-[#777]"
+            className="absolute inset-x-0 top-0 h-1/2 transition-opacity duration-150"
+            style={{
+              opacity: zone === "opp" ? (hud.aimState.canConfirm ? 1 : 0.65) : 0.22,
+              background: "linear-gradient(to bottom, rgba(220,30,30,0.42), transparent 85%)",
+            }}
+          />
+          <div
+            className="absolute inset-x-0 bottom-0 h-1/2 transition-opacity duration-150"
+            style={{
+              opacity: zone === "self" ? (hud.aimState.canConfirm ? 1 : 0.65) : 0.22,
+              background: "linear-gradient(to top, rgba(220,30,30,0.42), transparent 85%)",
+            }}
+          />
+          <div
+            className={`absolute top-[6%] left-1/2 -translate-x-1/2 font-mono text-sm tracking-[0.5em] uppercase transition-colors ${
+              zone === "opp" ? "text-[#ffd0d0]" : "text-[#ffd0d0]/35"
             }`}
           >
-            ↑ DRAG UP: SHOOT RIVAL {hud.aimState.zone === "opp" && hud.aimState.canConfirm ? "(RELEASE = FIRE)" : ""}
+            Rival
           </div>
-
-          <div className="mx-auto border border-[#3a3a3a] bg-[#0a0a0a]/75 px-3 py-1 font-mono text-[10px] tracking-[0.16em] text-[#9a9a9a] uppercase">
-            MIDDLE = CANCEL · ESC CANCEL · ↑/↓ + ENTER
-          </div>
-
           <div
-            className={`mx-auto border px-4 py-1.5 font-mono text-xs tracking-[0.18em] uppercase transition ${
-              hud.aimState.zone === "self"
-                ? hud.aimState.canConfirm
-                  ? "border-[#52c41a] bg-[#0e2609]/90 text-[#fff]"
-                  : "border-[#c6a15b] bg-[#1c160d]/85 text-[#e5c378]"
-                : "border-[#3a3a3a] bg-[#0a0a0a]/65 text-[#777]"
+            className={`absolute bottom-[6%] left-1/2 -translate-x-1/2 font-mono text-sm tracking-[0.5em] uppercase transition-colors ${
+              zone === "self" ? "text-[#ffd0d0]" : "text-[#ffd0d0]/35"
             }`}
           >
-            ↓ DRAG DOWN: SHOOT YOURSELF {hud.aimState.zone === "self" && hud.aimState.canConfirm ? "(RELEASE = FIRE)" : ""}
+            You
           </div>
         </div>
       )}
 
       {/* Lockpick target selection prompt */}
       {hud.lockpickSlot !== null && (
-        <div className="pointer-events-auto mx-auto mb-4 flex items-center gap-3 border border-[#e5c378] bg-[#16120b]/95 px-4 py-2 font-mono text-xs tracking-[0.14em] text-[#eaeaea] uppercase">
-          <span>LOCKPICK: PICK A RIVAL ITEM TO STEAL</span>
+        <div className="pointer-events-auto mx-auto mb-4 flex items-center gap-3 font-mono text-xs tracking-[0.2em] text-[#e5c378] uppercase [text-shadow:0_1px_6px_#000]">
+          <span>Pick a rival item to steal</span>
           {hud.onCancelLockpick && (
             <button
               type="button"
               onClick={hud.onCancelLockpick}
-              className="cursor-pointer border border-[#c6a15b]/60 px-2 py-0.5 text-[10px] text-[#c6a15b] hover:bg-[#2a2216]"
+              className="cursor-pointer text-[10px] text-[#9a9a9a] underline underline-offset-4 hover:text-[#eaeaea]"
             >
-              CANCEL
+              cancel
             </button>
           )}
         </div>
       )}
 
-      {/* Bottom status / stall / error bar */}
       <div className="flex items-end justify-between gap-3">
-        <div className="font-mono text-[10px] tracking-[0.14em] text-[#9a9a9a] uppercase">
-          {hud.canAct && !aiming && hud.lockpickSlot === null
-            ? "CLICK AND DRAG THE GUN · OR PICK AN ITEM"
-            : hud.txPhase === "sent" || hud.txPhase === "holding"
-              ? stallCaption ?? "WAITING FOR THE HAMMER..."
-              : hud.activeBeatId
-                ? `BEAT: ${hud.activeBeatId}`
-                : ""}
+        <div className="font-mono text-[10px] tracking-[0.25em] text-[#9a9a9a]/70 uppercase [text-shadow:0_1px_6px_#000]">
+          {showHint
+            ? "Pick up the gun, or use an item"
+            : waiting
+              ? (stallCaption ?? "Waiting for the hammer...")
+              : ""}
         </div>
 
         {errorText && (
-          <div className="border border-[#e61919] bg-[#240909]/95 px-3 py-1 font-mono text-[11px] text-[#ffb3b3]">
+          <div className="font-mono text-[11px] text-[#ff9d9d] [text-shadow:0_1px_6px_#000]">
             {errorText}
           </div>
         )}
