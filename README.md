@@ -30,14 +30,79 @@ What the hackathon work contains:
    - Owner controls (`set_config`, `pause`/`unpause`, `migrate`) and storage accounting covered by tests.
 2. **Walletless turns with a function-call access key** (`apps/web/lib/nearKey*.ts`, `nearCall.ts`, `nearKeyFlow.ts`). The player signs in once with MyNearWallet or Meteor (`@near-wallet-selector` 10.1.4). The dApp gets a function-call key limited to the Rolet contract, and each turn is signed with that key in the browser, with no wallet pop-up per move. A dev-only page at `/dev/near-key` exercises this flow.
 3. **TypeScript game engine with contract parity** (`apps/web/lib/game/`). This includes rules, a redacted per-player model, an action-log sync, an intent state machine, aim gestures, a bot and a wallet-free practice engine. `contracts/rolet-near/tests/vectors_export.rs` exports test vectors from the Rust contract into `docs/near/schema/vectors.json`, and `lib/game/vectors.test.ts` checks that the TS rules match the contract exactly.
-4. **Testnet scripts**: `contracts/rolet-near/scripts/deploy-testnet.sh` and `cli-match.sh` (a full two-account match from the CLI). Both refuse anything that is not `testnet`.
+4. **Testnet scripts**: `contracts/rolet-near/scripts/deploy-testnet.sh` (build, deploy, fund), `cli-match.sh` (a two-account match with full-access keys) and `fc-match.py` (a full match where every turn is signed with a function-call key). All of them refuse anything that is not `testnet`.
 
-### Honest status (at submission time)
+### Status (at submission time)
 
 - ✅ The contract is complete and tested (unit tests + `near-workspaces` sandbox integration tests).
 - ✅ The NEAR client libraries, the function-call key flow and the TS game engine are implemented and tested.
-- ⏳ **No contract is deployed to testnet yet.** The deploy and CLI-match scripts are ready; see "Deploy to testnet" below.
+- ✅ **Deployed on testnet** as `rolet.rolet-hk-o2611150055.testnet`, and a full match was played on it with function-call keys only. See "Live on NEAR testnet" below.
 - ⏳ The new 2.5D game scene (2D animated table and opponent, 3D revolver in Three.js) is in progress: a stage skeleton and clip player are on the dev-only `/dev/stage` page. The UI pages under `apps/web/app` are still mostly the Solana-era UI and are not yet wired to NEAR.
+
+---
+
+## Live on NEAR testnet
+
+Contract: [`rolet.rolet-hk-o2611150055.testnet`](https://testnet.nearblocks.io/address/rolet.rolet-hk-o2611150055.testnet). It was built from `contracts/rolet-near` in this repository and initialised with `init-config.json`.
+
+On 2026-11-15, two fresh testnet accounts played one full match against it (match id `1794693498`, player A won 2–1). Every game transaction (`join`, `reveal`, all 31 `fire` calls) was signed with a **function-call access key** that can only call the Rolet contract. No full-access key was used during play.
+
+| Step | Transaction |
+|---|---|
+| Deploy + `new(owner, config)` | [4b2GeVjm…](https://testnet.nearblocks.io/txns/4b2GeVjmGHdKEPiZVhnCx1JwSigUG8GponZrnoJ2Zsdm) |
+| `fund_treasury` (2 NEAR) | [BppG5rLC…](https://testnet.nearblocks.io/txns/BppG5rLCuuQSpzxZbwhAfke7dRGitAXPZv2N97ukkjE1) |
+| Player A `buy_character` (NEP-171 mint, 1 NEAR) | [gvGMiTx9…](https://testnet.nearblocks.io/txns/gvGMiTx9agLU8DTDJijGt8mfhhzsSd4N3Ge8HWFpqfA) |
+| Player A adds a function-call key (0.5 NEAR allowance, Rolet methods only) | [E5mHxpTL…](https://testnet.nearblocks.io/txns/E5mHxpTLCVJYkfQxx1vWBABpPUbQjRswmuuEkhUV62VF) |
+| Player B `buy_character` | [E91Q7eHm…](https://testnet.nearblocks.io/txns/E91Q7eHmNkGBY4PWQyNCANQEqdiv8JrgbUfDuBfEMhG4) |
+| Player B adds a function-call key | [DmZHjVbz…](https://testnet.nearblocks.io/txns/DmZHjVbzNMyJUaLLtAbysHC5HZigbhLoFLBgPhRYSi2e) |
+| A `join` (commit) | [8AA5ZG8V…](https://testnet.nearblocks.io/txns/8AA5ZG8V9QaavPvHA8ogaizj3Zf2PaTL388m4ZnqJXNW) |
+| B `join` (commit) | [CVJMx4dg…](https://testnet.nearblocks.io/txns/CVJMx4dg82HNK1c2AF3AHu8Xv9kK2bDcF98a1xpeTfp4) |
+| A `reveal` | [2RPaHDpX…](https://testnet.nearblocks.io/txns/2RPaHDpXb22uQXPx7DcFbUvks1iwsMG5ZTdkPMFXm1Lp) |
+| B `reveal` → match active | [He9iUmM1…](https://testnet.nearblocks.io/txns/He9iUmM1yhCJYVfFFUiwM8uH3jFPopUtKGkJLcqv6Tvq) |
+| First `fire` | [H3j5iv3e…](https://testnet.nearblocks.io/txns/H3j5iv3epJEvD9Htboq4qvJJR8Qk4EqEwbgEqdBNywkA) |
+| Last `fire`: `RoundEnded` 2–1, `MatchEnded`, 0.1 NEAR reward sent to A | [2jA3z33g…](https://testnet.nearblocks.io/txns/2jA3z33gbMfQVKfp31V9uo9ESPybdVB8FDUPWyzyUST2) |
+
+All 35 match transactions are listed in [docs/near/testnet-match-txs.json](docs/near/testnet-match-txs.json).
+
+![Full match on testnet, every turn signed with a function-call key](docs/media/testnet-match.png)
+
+### Check it yourself (read-only, no account needed)
+
+```bash
+# do: read the config the contract was initialised with
+near contract call-function as-read-only rolet.rolet-hk-o2611150055.testnet get_config json-args '{}' network-config testnet now
+# see: load_size 8, min_live 2, max_live 6, max_items 4, copies_per_item 4, rounds with start_hp 4
+
+# do: read the finished match
+near contract call-function as-read-only rolet.rolet-hk-o2611150055.testnet get_match json-args '{"match_id":"1794693498"}' network-config testnet now
+# see: "status": "Finished", score [2, 1]
+
+# do: read the leaderboard
+near contract call-function as-read-only rolet.rolet-hk-o2611150055.testnet leaderboard json-args '{}' network-config testnet now
+# see: player A with wins 1, player B with losses 1
+```
+
+### Play a match yourself against the deployed contract
+
+You need two funded testnet accounts in the near-cli-rs legacy keychain (`~/.near-credentials`). The faucet works: `near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create`.
+
+```bash
+C=rolet.rolet-hk-o2611150055.testnet
+# 1. each player mints a character NFT (entry ticket, 1 NEAR)
+near contract call-function as-transaction $C buy_character json-args '{"kind":"Kuleci"}' prepaid-gas '30.0 Tgas' attached-deposit '1 NEAR' sign-as <A>.testnet network-config testnet sign-with-legacy-keychain send
+near contract call-function as-transaction $C buy_character json-args '{"kind":"Ayarci"}' prepaid-gas '30.0 Tgas' attached-deposit '1 NEAR' sign-as <B>.testnet network-config testnet sign-with-legacy-keychain send
+# 2. each player adds a function-call key limited to the game methods
+near account add-key <A>.testnet grant-function-call-access --allowance '0.5 NEAR' --contract-account-id $C --function-names 'join,reveal,cancel,fire,use_item,claim_timeout' autogenerate-new-keypair save-to-legacy-keychain network-config testnet sign-with-legacy-keychain send
+#    (same for <B>; the key file is saved as ~/.near-credentials/testnet/<account>/ed25519_<pubkey>.json)
+# 3. play a full match with those keys only
+cd contracts/rolet-near
+ROLET_CONTRACT_ID=$C PLAYER_A=<A>.testnet PLAYER_B=<B>.testnet \
+FC_KEY_A=~/.near-credentials/testnet/<A>.testnet/ed25519_<pubkeyA>.json \
+FC_KEY_B=~/.near-credentials/testnet/<B>.testnet/ed25519_<pubkeyB>.json \
+python3 scripts/fc-match.py
+# see: join/reveal/fire lines with tx hashes marked "(function-call key)", then
+#      "match finished in N shots. score [2, x]". The winner receives 0.1 NEAR from the treasury.
+```
 
 ---
 
@@ -74,7 +139,7 @@ pnpm --filter web exec tsc --noEmit
 
 Result on the submitted commit: `117` tests, `117` passed, `0` failed. `tsc --noEmit` exits `0`.
 
-### 4. Deploy to testnet (optional, needs funded testnet accounts)
+### 4. Deploy your own copy to testnet (optional, needs funded testnet accounts)
 
 ```bash
 cd contracts/rolet-near

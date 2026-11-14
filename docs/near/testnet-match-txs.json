@@ -1,0 +1,216 @@
+{
+ "contract": "rolet.rolet-hk-o2611150055.testnet",
+ "match_id": "1794693498",
+ "txs": [
+  {
+   "label": "rolet-hk-a2611150055 join (commit)",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "join",
+   "tx": "8AA5ZG8V9QaavPvHA8ogaizj3Zf2PaTL388m4ZnqJXNW"
+  },
+  {
+   "label": "rolet-hk-b2611150055 join (commit)",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "join",
+   "tx": "CVJMx4dg82HNK1c2AF3AHu8Xv9kK2bDcF98a1xpeTfp4"
+  },
+  {
+   "label": "rolet-hk-a2611150055 reveal",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "reveal",
+   "tx": "2RPaHDpXb22uQXPx7DcFbUvks1iwsMG5ZTdkPMFXm1Lp"
+  },
+  {
+   "label": "rolet-hk-b2611150055 reveal",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "reveal",
+   "tx": "He9iUmM1yhCJYVfFFUiwM8uH3jFPopUtKGkJLcqv6Tvq"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "H3j5iv3epJEvD9Htboq4qvJJR8Qk4EqEwbgEqdBNywkA"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "AQqWVxR61hFE7mWQSeb3jJjn6r6LCEoPJBhEjrTPxH2P"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "AUdP3qtWSLZnAf7D9wg6SXCL9d6KFi8yhbenMUqpS1AT"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "3vnYHJ7o2WjcueQokx9yvZcEEgAv9gMqcxvErcTWwTw6"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "88t84QStxCLqmZn5oWhfato7NwSwR6MxXrwiRVin1DQM"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "83RbSDeSV39pCyRhqnarkLpQ2Lu1PHAuRcWqMyt12Sib"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "AdxYfXDcKrwzXJNr5LHqrTXvTBP64z3axSC2rFXeUF8M"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "enUqJSEQExfNnpwaywD64KvoouScu7wNfuG1kJVKrSY"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "65FcJakgVRBt9exV6B9VA3bRJVGwTBYeapvBKGK9ZHX2"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "Yrz3k7mDe2jZjG1xMitUz4aJnRPUxPKf59qLY6kTzhx"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "GyGgJ1kuNoXMepyTQTiwb8X1H4XaNaY8hDBLaGHc5Mwd"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "6WD39A4pqtiZgFP44YbcdWKP69HyBCDnG5Mf5LXDHzFS"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "9fbYk8wHMFgexHWi7ZNc2nVP1cpHVoyY1vmp1AmASJip"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "6PeKpU6PB479HaxfHZ7z6qGkRH8xyGBfpWGetq7Coekm"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "EBiYz4deGAxJ8giBXGrWc4rHDwCS5SLUQdgXNKR6wHfs"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "3mmvpKeD1Vdm6C3yn4vveNuMWmVXtU6TiPS3bmyRTxmw"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "EhNqPXnRt7vLNdS6EcVip9KCBogLA4j3iHU7AH3pcrVN"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "8tdpbkG4wSZg9Kqtr2sD8F5MbGrbM8WryarNpLLyfJ3J"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "6sUePQqLq3EAneYxLZp5nePxCECJeTPQYbUZRkbmoaEy"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "FpZ1mKhxWEg72RgaHcujCw79mfwFSMfzFsWkkkNPRvFU"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "6WqE7tUNMtmarjXQSKLhb4dBhJCMwishAuZuQB5Bb4fU"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "GQfoBgHggLLw2YQynHzMPVeUF8BsMv6KxrpQUiKgdswQ"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "6fyjm4tYfKTF55LELy6juqeemHBDaGrMb58V4pVeqKn1"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "HGuEBQtX1UThPWcp6bgNWbZbxTBg2pGLN91L1vRDmNkh"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "5HpBkUuoLevxm2PasMzWF9W1PbMqyPnThMFGPvwmxf8M"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "FvsMc2hGkx6T9i5kTXzRehyco3YDASV6s5prMxeJfYmM"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "8DvbvB2XeiQPGojGuAHqXSgqgYsdKjHtofaz8Dit7q7G"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "zfq768df9xVmeHUhDv9HgdA4zdUyAD6BtEzy3QcwbdW"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "7E2HF2KjKkfi1bTj3qRpUNKcjaRfvHtMh4HFMGBMpc6z"
+  },
+  {
+   "label": "rolet-hk-b2611150055 fires at opponent",
+   "signer": "rolet-hk-b2611150055.testnet",
+   "method": "fire",
+   "tx": "AP9Q9hRyoRhCHjXvBfhregG1Dm2Tdfxrsna7nRXy7CcX"
+  },
+  {
+   "label": "rolet-hk-a2611150055 fires at opponent",
+   "signer": "rolet-hk-a2611150055.testnet",
+   "method": "fire",
+   "tx": "2jA3z33gbMfQVKfp31V9uo9ESPybdVB8FDUPWyzyUST2"
+  }
+ ]
+}
