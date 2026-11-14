@@ -200,7 +200,7 @@ export function StageLab() {
     const initModel = fromSnapshot(snap, 0);
     resetStage(visualFromModel(initModel, 0));
     enqueueActions(FULL_LOAD_SCENARIO, initModel, false);
-    appendLog(`Tam yükleme senaryosu başlatıldı (${FULL_LOAD_SCENARIO.length} aksiyon)`);
+    appendLog(`Full load scenario started (${FULL_LOAD_SCENARIO.length} actions)`);
   };
 
   const updatePoseAxis = (
@@ -226,7 +226,7 @@ export function StageLab() {
       await navigator.clipboard.writeText(json);
       setCopiedNotice(true);
       setTimeout(() => setCopiedNotice(false), 1800);
-      appendLog("Kalibrasyon poz JSON panoya kopyalandı.");
+      appendLog("Calibration pose JSON copied to clipboard.");
     } catch {
       appendLog(`Poz JSON:\n${json}`);
     }
@@ -239,7 +239,7 @@ export function StageLab() {
       <header className="flex flex-wrap items-center justify-between gap-3 border border-[#2a2a2a] bg-[#111] px-4 py-2.5 font-mono text-xs">
         <div>
           <span className="font-bold text-[#c6a15b]">ROLET /dev/stage</span>{" "}
-          <span className="text-[#9a9a9a]">— F3-12 Director, Beat & Kalibrasyon Laboratuvarı</span>
+          <span className="text-[#9a9a9a]">— F3-12 Director, Beat & Calibration Lab</span>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -247,10 +247,10 @@ export function StageLab() {
             onClick={handleFullLoadScenario}
             className="cursor-pointer border border-[#52c41a] bg-[#10260d] px-3 py-1 font-bold text-[#c8f7b8] hover:bg-[#173612]"
           >
-            TAM YÜKLEME SENARYOSU
+            FULL LOAD SCENARIO
           </button>
           <label className="flex items-center gap-2">
-            <span className="text-[#9a9a9a]">KARAKTER:</span>
+            <span className="text-[#9a9a9a]">CHARACTER:</span>
             <select
               value={characterKind}
               onChange={(e) => setCharacterKind(e.target.value as CharacterKind)}
@@ -262,7 +262,7 @@ export function StageLab() {
             </select>
           </label>
           <label className="flex items-center gap-2">
-            <span className="text-[#9a9a9a]">TUTAN:</span>
+            <span className="text-[#9a9a9a]">HOLDER:</span>
             <select
               value={effectiveVisual.gunHolder}
               onChange={(e) => setGunHolderOverride(e.target.value as GunHolder)}
@@ -291,11 +291,11 @@ export function StageLab() {
               clearOverrides();
               setCalibratingPose(null);
               resetStage(createDefaultStageVisual(0));
-              appendLog("Sahne sıfırlandı.");
+              appendLog("Stage reset.");
             }}
             className="cursor-pointer border border-[#c6a15b]/50 px-2.5 py-1 text-[11px] text-[#c6a15b] hover:bg-[#1e1a12]"
           >
-            SIFIRLA
+            RESET
           </button>
         </div>
       </header>
@@ -327,7 +327,7 @@ export function StageLab() {
             activeBeatId,
             muted,
             onToggleMute: toggleMute,
-            statusLabel: isBusy ? "OYNATILIYOR" : "DEV STAGE",
+            statusLabel: isBusy ? "PLAYING" : "DEV STAGE",
           }}
           onRivalClipEnded={handleRivalClipEnded}
         />
@@ -337,7 +337,7 @@ export function StageLab() {
       <section className="mx-auto max-w-6xl border border-[#2a2a2a] bg-[#111] p-3 font-mono text-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-bold tracking-[0.14em] text-[#c6a15b] uppercase">
-            Revolver Düğümleri & Poz Kalibrasyonu
+            Revolver Nodes & Pose Calibration
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -345,7 +345,7 @@ export function StageLab() {
               onClick={() => setCylOverride((effectiveVisual.cylinderIndex + 1) % 8)}
               className="cursor-pointer border border-[#3a3a3a] bg-[#171717] px-2.5 py-1 text-[11px] hover:border-[#c6a15b]"
             >
-              Hazne +45° ({effectiveVisual.cylinderIndex})
+              Cylinder +45° ({effectiveVisual.cylinderIndex})
             </button>
             <button
               type="button"
@@ -356,7 +356,7 @@ export function StageLab() {
                   : "border-[#3a3a3a] bg-[#171717]"
               }`}
             >
-              Crane: {effectiveVisual.craneOpen ? "AÇIK" : "KAPALI"}
+              Crane: {effectiveVisual.craneOpen ? "OPEN" : "CLOSED"}
             </button>
             <button
               type="button"
@@ -367,7 +367,7 @@ export function StageLab() {
                   : "border-[#3a3a3a] bg-[#171717]"
               }`}
             >
-              Horoz: {effectiveVisual.hammerCocked ? "KURULU" : "İNİK"}
+              Hammer: {effectiveVisual.hammerCocked ? "COCKED" : "DOWN"}
             </button>
             <button
               type="button"
@@ -378,14 +378,14 @@ export function StageLab() {
                   : "border-[#3a3a3a] bg-[#171717]"
               }`}
             >
-              Namlu Ucu: {effectiveVisual.sawActive ? "KESİK" : "TAM"}
+              Muzzle: {effectiveVisual.sawActive ? "SAWN" : "INTACT"}
             </button>
             <button
               type="button"
               onClick={() => void handleCopyPosesJson()}
               className="cursor-pointer border border-[#c6a15b] bg-[#1e180e] px-2.5 py-1 text-[11px] text-[#e5c378] hover:bg-[#2c2214]"
             >
-              {copiedNotice ? "KOPYALANDI!" : "POZ JSON KOPYALA"}
+              {copiedNotice ? "COPIED!" : "COPY POSE JSON"}
             </button>
           </div>
         </div>
@@ -400,7 +400,7 @@ export function StageLab() {
                 : "border-[#2e2e2e] bg-[#171717] text-[#9a9a9a]"
             }`}
           >
-            Otomatik (gunHolder/aim)
+            Auto (gunHolder/aim)
           </button>
           {POSE_IDS.map((pid) => (
             <button
@@ -489,7 +489,7 @@ export function StageLab() {
       <section className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-2">
         <div className="border border-[#2a2a2a] bg-[#111] p-3">
           <h2 className="mb-2 font-mono text-xs font-bold tracking-[0.14em] text-[#c6a15b] uppercase">
-            Rakip Klipleri ({ALL_CLIPS.length})
+            Rival Clips ({ALL_CLIPS.length})
           </h2>
           <div className="flex flex-wrap gap-1.5">
             {ALL_CLIPS.map((clip) => (
@@ -511,7 +511,7 @@ export function StageLab() {
 
         <div className="border border-[#2a2a2a] bg-[#111] p-3">
           <h2 className="mb-2 font-mono text-xs font-bold tracking-[0.14em] text-[#c6a15b] uppercase">
-            Beat Kataloğu ({ALL_BEATS.length})
+            Beat Catalog ({ALL_BEATS.length})
           </h2>
           <div className="flex flex-wrap gap-1.5">
             {ALL_BEATS.map((beatId) => (
@@ -533,9 +533,9 @@ export function StageLab() {
       </section>
 
       <section className="mx-auto max-w-6xl border border-[#2a2a2a] bg-[#0c0c0c] p-3 font-mono text-[11px] text-[#9a9a9a]">
-        <div className="mb-1 text-[#c6a15b] uppercase">Olay Günlüğü</div>
+        <div className="mb-1 text-[#c6a15b] uppercase">Event Log</div>
         {logs.length === 0 ? (
-          <div>Henüz olay yok. Yukarıdan TAM YÜKLEME SENARYOSU, bir klip veya beat seçin.</div>
+          <div>No events yet. Trigger FULL LOAD SCENARIO, a clip or a beat above.</div>
         ) : (
           <ul className="space-y-0.5">
             {logs.map((entry, i) => (
