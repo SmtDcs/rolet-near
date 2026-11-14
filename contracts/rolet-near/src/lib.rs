@@ -19,6 +19,7 @@ use near_contract_standards::non_fungible_token::{NonFungibleToken, TokenId};
 use near_sdk::collections::{LookupMap, UnorderedSet};
 use near_sdk::{env, near, BorshStorageKey, AccountId, NearToken, PanicOnDefault};
 use nft::CharacterState;
+use views::LeaderboardEntry;
 
 /// Kontrat durumu (DESIGN §4.5). Maç, oyuncu ve NFT koleksiyonlarının
 /// metodları `nft.rs` (T-109) ve `matches.rs` (T-110..) modüllerindedir.
@@ -49,8 +50,10 @@ pub struct Contract {
     active_keys: LookupMap<AccountId, [u8; 32]>,
     /// `match_id` -> son maç anahtarı dizini (`get_match(id, None)` ve dışarıdan doğrulama için).
     match_id_index: LookupMap<u64, [u8; 32]>,
-    /// Leaderboard için oyuncu listesi (T-115).
+    /// Leaderboard için oyuncu listesi (T-115; S-02 `assert_solvent` taraması için korunur).
     player_index: UnorderedSet<AccountId>,
+    /// Artımlı güncellenen top-100 sıralama tablosu (S-09 / FIX-14).
+    top_leaderboard: Vec<LeaderboardEntry>,
 }
 
 /// near-sdk koleksiyonları için önekler (birbirinden benzersiz).
@@ -93,6 +96,7 @@ impl Contract {
             active_keys: LookupMap::new(StorageKey::ActiveKeys),
             match_id_index: LookupMap::new(StorageKey::MatchIdIndex),
             player_index: UnorderedSet::new(StorageKey::PlayerIndex),
+            top_leaderboard: Vec::new(),
         }
     }
 

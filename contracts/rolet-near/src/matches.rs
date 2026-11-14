@@ -222,10 +222,11 @@ impl Contract {
         state.active_match = Some(match_id);
         self.players.insert(player, &state);
         self.active_keys.insert(player, key);
-        // Leaderboard listesi (T-115).
+        // Leaderboard listesi (T-115, S-09).
         if !self.player_index.contains(player) {
             self.player_index.insert(player);
         }
+        self.update_leaderboard(player, &state);
     }
 
     /// Bir tarafın join maliyetini geri alır (cancel / reveal-timeout).
@@ -247,6 +248,7 @@ impl Contract {
         if state == PlayerState::default() {
             self.players.remove(player);
             self.player_index.remove(player);
+            self.remove_from_leaderboard(player);
         } else {
             self.players.insert(player, &state);
         }
@@ -288,6 +290,7 @@ impl Contract {
                 st.losses += 1;
             }
             self.players.insert(account, &st);
+            self.update_leaderboard(account, &st);
         }
 
         // Önce depolama farkını düş, sonra ödülü öde (S-02).

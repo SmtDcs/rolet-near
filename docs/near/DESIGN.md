@@ -404,7 +404,7 @@ Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_loa
 | `fund_treasury()` | payable | herkes | |
 | `set_config`, `pause`, `withdraw_ops` | call | owner | |
 | `get_match(match_id)` → `MatchView` | view | | gizli alan yok; `fixed` dahil (v1 sınırı) |
-| `get_actions(match_id, since_seq)` → `Vec<Action>` | view | | istemci animasyon kuyruğu |
+| `get_actions(match_id, since_seq)` → `ActionsPage { first_seq, actions }` | view | | istemci animasyon kuyruğu (boşlukta snapshot) |
 | `get_player(account)`, `get_character(token_id)`, `get_config()`, `get_treasury()`, `leaderboard(from, limit)` | view | | |
 
 Maç bitince ödül **aynı `fire`/`claim_timeout` çağrısı içinde** `Promise::new(winner).transfer(reward)` ile gönderilir (ayrı `settle` yok). Treasury yetersizse maç yine biter, ödül `owed` olarak kaydedilir ve `claim_reward()` ile sonradan çekilir.
