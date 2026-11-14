@@ -278,10 +278,10 @@ Toplam: 31 animasyon girdisi; çoğu kamera + prop tween'i (kod), karakter kemik
 ### 4.3 Function-call access key akışı (pitch'in ana noktası)
 
 1. Oyuncu `/duel`'e ilk girdiğinde istemci yeni bir ed25519 anahtar çifti üretir.
-2. Wallet Selector üzerinden **tek bir onay**: oyuncunun kendi hesabına `AddKey` aksiyonu — izin: `FunctionCall { receiver_id: rolet, method_names: [join, reveal, cancel, fire, use_item, claim_timeout], allowance: 0.5 NEAR }`.
+2. Wallet Selector üzerinden **tek bir onay**: oyuncunun kendi hesabına `AddKey` aksiyonu — izin: `FunctionCall { receiver_id: rolet, method_names: [join, reveal, cancel, fire, use_item, claim_timeout], allowance: 0.5 NEAR }` (`Config.allowance_hint = 0.5 NEAR`; yoğun/çoklu maç oturumları için T-201 cüzdan testine göre 1–2 NEAR önerilir).
    - Tercih edilen yol: `signIn({ contractId, methodNames })` destekleyen cüzdanlarda (MyNearWallet, Meteor vb.) cüzdan bu anahtarı zaten ekler ve istemciye verir. **[EMİN DEĞİLİM: hangi cüzdanların key'i dApp'e açtığı — T-201'de doğrulanacak]**
    - Yedek yol: istemci kendi ürettiği public key için `signAndSendTransaction({ receiverId: <oyuncu>, actions: [AddKey(...)] })`.
-3. Sonraki tüm oyun çağrıları bu anahtarla imzalanır, istemci doğrudan RPC'ye gönderir. Gaz ücreti allowance'tan düşer (bir maç ≈ 20–60 çağrı; NEAR'da bir çağrı ~0.0005 NEAR mertebesi → 0.5 NEAR allowance onlarca maç yeter).
+3. Sonraki tüm oyun çağrıları bu anahtarla imzalanır, istemci doğrudan RPC'ye gönderir. Gaz ücreti allowance'tan düşer: S-01 koruması gereği `reveal`, `fire` ve `use_item` çağrıları en başta `prepaid_gas >= MIN_ACTION_GAS (10 Tgas)` bekler (eklenen ön ödemeli 10 Tgas = ~0.001 NEAR; sandbox'ta ölçülen gerçek yanma `2.3–4.4 Tgas` ≈ `0.00023–0.00044 NEAR/çağrı`, kalan gaz iade edilir). Tam bir maç (~25–60 çağrı) birkaç mNEAR harcar; ancak iade öncesi anlık allowance rezervasyonu nedeniyle 0.5 NEAR allowance pratikte sınırlı sayıda eşzamanlı maçı taşır (T-201'de kullanılmayan gazın allowance'a iadesi ve 1–2 NEAR hint doğrulanacak).
 4. Function-call key **deposit ekleyemez** → oyun metodlarının hiçbiri `#[payable]` değildir. NFT satın alma payable'dır ve bu yüzden yalnızca cüzdandan yapılabilir. Güvenlik özelliği olarak pitch'te anlatılır: "anahtar çalınsa bile en kötü ihtimalle senin adına hamle yapılır, para çekilemez."
 5. Allowance biterse istemci bunu `NotEnoughAllowance` hatasından anlar ve yeni key için tek onay ister.
 6. Çıkışta (`signOut`) istemci key'i siler; isteğe bağlı `DeleteKey` cüzdanla.
@@ -313,7 +313,7 @@ Bitiş: son fire → winner yazılır → ödül otomatik transfer → oyuncular
 
 `claim_timeout(match_id)`:
 - Reveal aşamasında: reveal etmeyen tarafa karşı 60 s sonra → maç iptal, **zamanında davranan** tarafın durability'si iade, karşı taraf ceza olarak durability kaybeder (iade yok). Ödül yok.
-- Active'de: sıra sahibinin `deadline_ms`'i geçtiyse diğer oyuncu çağırır → çağıran maçı kazanır, ödül ödenir.
+- Active'de: sıra sahibinin `deadline_ms + TIMEOUT_GRACE_MS` (`2_000 ms`, S-15 yarış koruması) geçtiyse diğer oyuncu çağırır → çağıran maçı kazanır, ödül ödenir.
 - Süre ölçümü `env::block_timestamp_ms()`.
 
 ### 4.5 Durum modeli (taslak)
@@ -376,6 +376,7 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 - Bu, önceden karıştırılmış gizli bir dizi ile **istatistiksel olarak özdeştir** (her konumun marjinal ve koşullu dağılımı aynı), ama zincirde okunacak bir sıra yoktur.
 - `env::random_seed()` işlemin **çalıştığı** bloğa aittir; oyuncu işlemi gönderirken bilemez. View çağrısıyla simülasyon işe yaramaz (farklı blok, farklı tohum).
 - NEAR çağrıları asenkron ve atomik değildir: bir oyuncu kendi kontratından `fire` çağırıp sonuç kötüyse geri alamaz. Yine de kontrat `predecessor_account_id == signer_account_id` şartı koşar (kontrat-üzerinden-çağrıyı tamamen kapatır).
+- **Gaz-limitli reroll koruması (`MIN_ACTION_GAS`, S-01):** Saldırgan çok düşük ön ödemeli gazla `fire`/`use_item`/`reveal` gönderip yalnızca pahalı (kötü) dalların `ExceededGas` ile revert etmesini sağlayabilir. Bunu kapatmak için bu üç metod en başta, hiçbir RNG veya oyun durumu okunmadan `env::prepaid_gas() >= MIN_ACTION_GAS` (`10 Tgas`) şartını arar. Sandbox'ta VALUES ile ölçülen en pahalı dal (`fire` maç sonu + ödül transferi = `4.423 Tgas`) için >2× güvenlik payı sağlar (`docs/near/VERSIONS.md`).
 - Commit-reveal'in rolü: `match_seed`'i tek bir tarafın (blok üreticisi dahil) seçememesi. Oyun içi her çekilişin öngörülemezliğini `env::random_seed()` sağlar. Kalan teorik risk: blok üreten validator'ın kendisinin oyuncu olması — hackathon ölçeğinde kabul edilebilir, README'de açıkça yazılır.
 
 **Gizli bilgi eşyaları (`Loupe`, `Ticker`):** Kontrat çekilen fişeği `fixed`'e yazmak zorunda (sonraki atış aynı sonucu vermeli) ve kontratın şifreleyebileceği bir sırrı yoktur. Dolayısıyla:
@@ -409,8 +410,11 @@ Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_loa
 
 Maç bitince ödül **aynı `fire`/`claim_timeout` çağrısı içinde** `Promise::new(winner).transfer(reward)` ile gönderilir (ayrı `settle` yok). Treasury yetersizse maç yine biter, ödül `owed` olarak kaydedilir ve `claim_reward()` ile sonradan çekilir.
 
-Depolama: bitmiş maçlar `Finished` olduktan sonra `log` ve `game.load.fixed` budanır, maç kaydı küçük bir özet halinde tutulur (veya N gün sonra silinir). Depolama maliyeti treasury'den karşılanır; `Config.min_treasury` (varsayılan 0.1 NEAR) altına inince yeni maç kabul edilmez.
-- Ölçülen `env::storage_usage()` (T-116 birim testi, R2 4'lü yük + log girişleri): maç ortası `307212 B` → maç sonu budama sonrası `307161 B` (`-51 B` fark; `LOG_CAP = 32` dolduğunda tasarruf daha da büyür).
+Depolama ve muhasebe (S-02 / FIX-03-R):
+- Kontrat state mutasyonları (`buy_character`, `join`, `cancel`, `reveal`, `fire`, `use_item`, `claim_timeout`, `finish_match`) `env::storage_usage()` farkını simetrik olarak `treasury` üzerinden muhasebeleştirir (`settle_storage`): büyüyen baytın depolama kilidi `treasury`'den düşülür, `cancel`, `Revealing` timeout silmeleri ve `finish_match` budaması ile açılan baytların kilidi `treasury`'ye geri iade edilir.
+- Değişmez (solvency): her işlem sonunda `free_balance >= treasury + ops_balance + Σowed` korunur (`free_balance = account_balance - storage_usage * storage_byte_cost`); sandbox (`near-workspaces`) ve birim testlerle doğrulanır.
+- Bitmiş maçlarda `log` ve `game.load.fixed` budanır, özet kalır; `cancel` ve `Revealing` timeout'ta maç kaydı tamamen silinir. `Config.min_treasury` (varsayılan 0.1 NEAR) altına inince yeni maç kabul edilmez.
+- Ölçülen `env::storage_usage()` (T-116 birim testi, R2 yük + log girişleri): maç ortası budama öncesi > maç sonu budama sonrası (ör. −51 B minimumdan `LOG_CAP = 32` dolduğunda birkaç KB'a kadar iade). Gaz ölçümleri için bkz. `docs/near/VERSIONS.md`.
 
 ### 4.8 Olaylar ve istemci senkronu
 - Her aksiyon hem `log`'a (`seq` ile) yazılır hem NEP-297 formatında `EVENT_JSON:{"standard":"rolet","version":"1.0.0","event":"shot","data":[...]}` olarak loglanır.
@@ -576,7 +580,7 @@ Kritik yol: F1 → F2 → F3. F4'ün asset kısmı F0'dan itibaren paralel; F3 b
 | # | Risk | Etki | Azaltma |
 |---|---|---|---|
 | R1 | **Gizli bilgi zincirde okunabilir** (Loupe/Ticker sonucu, `fixed`) | Hile yapan istemci avantaj sağlar | Lazy draw ile fişek sırası hiç saklanmaz (asıl gizlilik korunur); eşya sonuçları v1'de UI gizliliği; README'de açık sınır; v2 yolu belgelenir |
-| R2 | `env::random_seed()` validator tarafından bilinir | Validator-oyuncu teorik avantaj | Commit-reveal ile seed karışımı; `predecessor == signer` şartı; hackathon ölçeğinde kabul + açıklama |
+| R2 | `env::random_seed()` validator tarafından bilinir; düşük gazla seçici revert (S-01) | Validator-oyuncu veya seçici gaz reroll'u teorik avantaj sağlar | Commit-reveal ile seed karışımı; `predecessor == signer` şartı; `reveal`/`fire`/`use_item` başında `MIN_ACTION_GAS (10 Tgas)` zorunluluğu (VALUES en pahalı dal `4.423 Tgas`); hackathon ölçeğinde kabul + açıklama |
 | R3 | Cüzdanların function-call key davranışı farklı | "Tek onay" demosu bazı cüzdanlarda kırılır | T-201 spike: 2–3 cüzdanda dene; yedek yol olarak açık `AddKey` işlemi; demo'da test edilmiş cüzdan |
 | R4 | Zincir gecikmesi his'i bozar | Buckshot'ın temposu kaybolur | §5.3 gerilim beklemesi; kendi hamlende işlem sonucu doğrudan; rakip için 600 ms yoklama |
 | R5 | Godot wasm ~39.5 MB | Yavaş ilk yükleme, mobilde çökme | Brotli ön sıkıştırma + `Content-Encoding`; kuyrukta beklerken iframe'i önden yükle; gereksiz modülleri kapatan özel export şablonu (stretch); masaüstü hedefli demo |
