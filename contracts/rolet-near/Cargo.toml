@@ -10,6 +10,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 near-sdk = "=5.30.2"
+# borsh derive makroları üretilen kodda `borsh` adını doğrudan aradığı için
+# (proc_macro_crate manifestoda bakar) doğrudan bağımlılık zorunlu;
+# sürüm near-sdk 5.30.2'nin kilitlediği borsh ile aynı.
+borsh = "=1.8.1"
+
 
 [dev-dependencies]
 near-sdk = { version = "=5.30.2", features = ["unit-testing"] }

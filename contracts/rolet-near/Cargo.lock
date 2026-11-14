@@ -1850,6 +1850,7 @@ dependencies = [
 name = "rolet-near"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "near-sdk",
 ]
 

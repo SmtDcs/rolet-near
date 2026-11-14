@@ -33,6 +33,7 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | near-sdk | **=5.30.2** (2026-11-13) | tüm kontrat | https://crates.io/crates/near-sdk · https://docs.rs/near-sdk · https://github.com/near/near-sdk-rs |
 | near-contract-standards | **=5.30.2** (2026-11-13; near-sdk ile aynı yayın treni) | T-109 NFT (NEP-171/177/181) | https://crates.io/crates/near-contract-standards · https://docs.rs/near-contract-standards |
 | near-workspaces | **=0.24.0** (2026-10-26) | T-117 sandbox entegrasyon testleri (dev-dependency) | https://crates.io/crates/near-workspaces · https://github.com/near/near-workspaces-rs |
+| borsh | **=1.8.1** (near-sdk 5.30.2'nin kilitlediği sürüm; derive'lar `borsh`'u doğrudan aradığı için manifest bağımlılığı) | tüm kontrat state tipleri | https://crates.io/crates/borsh · https://docs.rs/borsh |
 
 ## npm paketleri (`apps/web`, F2/F3 görevlerinde eklenecek)
 
