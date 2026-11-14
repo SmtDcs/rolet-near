@@ -1,0 +1,2661 @@
+{
+  "version": 1,
+  "config": {
+    "rounds": [
+      {
+        "start_hp": 4,
+        "items_per_load": 4,
+        "heal_cut_at": null
+      },
+      {
+        "start_hp": 4,
+        "items_per_load": 4,
+        "heal_cut_at": null
+      },
+      {
+        "start_hp": 4,
+        "items_per_load": 4,
+        "heal_cut_at": 2
+      }
+    ],
+    "turn_ms": 45000,
+    "reveal_ms": 60000,
+    "reward": "100000000000000000000000",
+    "price": "1000000000000000000000000",
+    "ops_bps": 500,
+    "durability": 10,
+    "allowance_hint": "500000000000000000000000",
+    "tincture_good_pct": 50,
+    "max_items": 4,
+    "min_treasury": "100000000000000000000000",
+    "load_size": 8,
+    "min_live": 2,
+    "max_live": 6,
+    "copies_per_item": 4
+  },
+  "scenarios": [
+    {
+      "name": "fire_hacksaw_and_shackle_chain",
+      "initial_state": {
+        "round": 1,
+        "score": [
+          0,
+          0
+        ],
+        "hp": [
+          4,
+          4
+        ],
+        "max_hp": 4,
+        "heal_cut": [
+          false,
+          false
+        ],
+        "items": [
+          [
+            "Hacksaw",
+            "Shackle"
+          ],
+          []
+        ],
+        "load": {
+          "announced_live": 2,
+          "announced_blank": 3,
+          "remaining": 5,
+          "live_left": 2,
+          "blank_left": 3,
+          "fixed": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "turn": 0,
+        "shackled": null,
+        "shackle_broke_this_turn": false,
+        "saw_active": false,
+        "deck_counts": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "shells": [
+        "Blank",
+        "Live",
+        "Blank",
+        "Blank",
+        "Live"
+      ],
+      "rolls": [],
+      "steps": [
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Hacksaw",
+              "slot": 0,
+              "result": {
+                "kind": "None"
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Shackle"
+              ],
+              []
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 3,
+              "remaining": 5,
+              "live_left": 2,
+              "blank_left": 3,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": true,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Shackle",
+              "slot": 0,
+              "result": {
+                "kind": "None"
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              []
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 3,
+              "remaining": 5,
+              "live_left": 2,
+              "blank_left": 3,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": 1,
+            "shackle_broke_this_turn": false,
+            "saw_active": true,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "SelfTarget"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "SelfTarget",
+              "shell": "Blank",
+              "damage": 0
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              []
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 3,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": 1,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "Opponent",
+              "shell": "Live",
+              "damage": 1
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Live"
+            },
+            {
+              "kind": "TurnSkipped",
+              "player": 1
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              3
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              []
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 3,
+              "remaining": 3,
+              "live_left": 1,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": true,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "SelfTarget"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "SelfTarget",
+              "shell": "Blank",
+              "damage": 0
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              3
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              []
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 3,
+              "remaining": 2,
+              "live_left": 1,
+              "blank_left": 1,
+              "fixed": [
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": true,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "Opponent",
+              "shell": "Blank",
+              "damage": 0
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              3
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              []
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 3,
+              "remaining": 1,
+              "live_left": 1,
+              "blank_left": 0,
+              "fixed": [
+                null
+              ]
+            },
+            "turn": 1,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 1,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 1,
+              "target": "Opponent",
+              "shell": "Live",
+              "damage": 1
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Live"
+            },
+            {
+              "kind": "LoadStarted",
+              "live": 2,
+              "blank": 6,
+              "total": 8
+            },
+            {
+              "kind": "ItemsDealt",
+              "player": 0,
+              "items": [
+                "Loupe",
+                "Loupe",
+                "Loupe",
+                "Loupe"
+              ]
+            },
+            {
+              "kind": "ItemsDealt",
+              "player": 1,
+              "items": [
+                "Pipe",
+                "Pipe",
+                "Pipe",
+                "Pipe"
+              ]
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              3,
+              3
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Loupe",
+                "Loupe",
+                "Loupe",
+                "Loupe"
+              ],
+              [
+                "Pipe",
+                "Pipe",
+                "Pipe",
+                "Pipe"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 6,
+              "remaining": 8,
+              "live_left": 2,
+              "blank_left": 6,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              0,
+              0,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "loupe_magnet_ticker_flask_reload",
+      "initial_state": {
+        "round": 2,
+        "score": [
+          0,
+          0
+        ],
+        "hp": [
+          4,
+          4
+        ],
+        "max_hp": 4,
+        "heal_cut": [
+          false,
+          false
+        ],
+        "items": [
+          [
+            "Loupe",
+            "Magnet",
+            "Ticker",
+            "Flask"
+          ],
+          [
+            "Flask"
+          ]
+        ],
+        "load": {
+          "announced_live": 2,
+          "announced_blank": 2,
+          "remaining": 4,
+          "live_left": 2,
+          "blank_left": 2,
+          "fixed": [
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "turn": 0,
+        "shackled": null,
+        "shackle_broke_this_turn": false,
+        "saw_active": false,
+        "deck_counts": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "shells": [
+        "Live",
+        "Live",
+        "Blank",
+        "Blank"
+      ],
+      "rolls": [
+        1,
+        2,
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "steps": [
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Loupe",
+              "slot": 0,
+              "result": {
+                "kind": "Private",
+                "pos": 0,
+                "shell": "Live"
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Magnet",
+                "Ticker",
+                "Flask"
+              ],
+              [
+                "Flask"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                "Live",
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Magnet",
+              "slot": 0,
+              "result": {
+                "kind": "None"
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Ticker",
+                "Flask"
+              ],
+              [
+                "Flask"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 1,
+              "blank_left": 3,
+              "fixed": [
+                "Blank",
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Ticker",
+              "slot": 0,
+              "result": {
+                "kind": "Private",
+                "pos": 2,
+                "shell": "Live"
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Flask"
+              ],
+              [
+                "Flask"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 1,
+              "blank_left": 3,
+              "fixed": [
+                "Blank",
+                null,
+                "Live",
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Flask",
+              "slot": 0,
+              "result": {
+                "kind": "Ejected",
+                "shell": "Blank"
+              }
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 3,
+              "live_left": 1,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                "Live",
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "Opponent",
+              "shell": "Blank",
+              "damage": 0
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 2,
+              "live_left": 1,
+              "blank_left": 1,
+              "fixed": [
+                "Live",
+                null
+              ]
+            },
+            "turn": 1,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 1,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 1,
+              "target": "Opponent",
+              "shell": "Live",
+              "damage": 1
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Live"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              3,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 1,
+              "live_left": 0,
+              "blank_left": 1,
+              "fixed": [
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "SelfTarget"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "SelfTarget",
+              "shell": "Blank",
+              "damage": 0
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            },
+            {
+              "kind": "LoadStarted",
+              "live": 4,
+              "blank": 4,
+              "total": 8
+            },
+            {
+              "kind": "ItemsDealt",
+              "player": 0,
+              "items": [
+                "Loupe",
+                "Loupe",
+                "Pipe",
+                "Pipe"
+              ]
+            },
+            {
+              "kind": "ItemsDealt",
+              "player": 1,
+              "items": [
+                "Flask",
+                "Flask",
+                "Shackle"
+              ]
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              3,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Loupe",
+                "Loupe",
+                "Pipe",
+                "Pipe"
+              ],
+              [
+                "Flask",
+                "Flask",
+                "Flask",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 8,
+              "live_left": 4,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              3,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "pipe_lockpick_tincture_r3_heal_cut",
+      "initial_state": {
+        "round": 3,
+        "score": [
+          0,
+          0
+        ],
+        "hp": [
+          3,
+          4
+        ],
+        "max_hp": 4,
+        "heal_cut": [
+          false,
+          false
+        ],
+        "items": [
+          [
+            "Pipe",
+            "Lockpick",
+            "Tincture",
+            "Tincture"
+          ],
+          [
+            "Pipe",
+            "Lockpick"
+          ]
+        ],
+        "load": {
+          "announced_live": 2,
+          "announced_blank": 2,
+          "remaining": 4,
+          "live_left": 2,
+          "blank_left": 2,
+          "fixed": [
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "turn": 0,
+        "shackled": null,
+        "shackle_broke_this_turn": false,
+        "saw_active": false,
+        "deck_counts": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "shells": [
+        "Blank"
+      ],
+      "rolls": [
+        10,
+        80,
+        80
+      ],
+      "steps": [
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Pipe",
+              "slot": 0,
+              "result": {
+                "kind": "Healed",
+                "amount": 1
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Lockpick",
+                "Tincture",
+                "Tincture"
+              ],
+              [
+                "Pipe",
+                "Lockpick"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": 0
+          },
+          "ok": false,
+          "actions": [],
+          "error": "ItemBlocked",
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Lockpick",
+                "Tincture",
+                "Tincture"
+              ],
+              [
+                "Pipe",
+                "Lockpick"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 1,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Tincture",
+              "slot": 1,
+              "result": {
+                "kind": "Healed",
+                "amount": 0
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Lockpick",
+                "Tincture"
+              ],
+              [
+                "Pipe",
+                "Lockpick"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 1,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Tincture",
+              "slot": 1,
+              "result": {
+                "kind": "Damaged",
+                "amount": 1
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              3,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Lockpick"
+              ],
+              [
+                "Pipe",
+                "Lockpick"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": 0
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Lockpick",
+              "slot": 0,
+              "result": {
+                "kind": "None"
+              }
+            },
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Pipe",
+              "slot": 0,
+              "result": {
+                "kind": "Healed",
+                "amount": 1
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Lockpick"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 4,
+              "live_left": 2,
+              "blank_left": 2,
+              "fixed": [
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "Opponent",
+              "shell": "Blank",
+              "damage": 0
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Blank"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Lockpick"
+              ]
+            ],
+            "load": {
+              "announced_live": 2,
+              "announced_blank": 2,
+              "remaining": 3,
+              "live_left": 2,
+              "blank_left": 1,
+              "fixed": [
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 1,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "r3_heal_cut_and_blocked",
+      "initial_state": {
+        "round": 3,
+        "score": [
+          0,
+          0
+        ],
+        "hp": [
+          3,
+          4
+        ],
+        "max_hp": 4,
+        "heal_cut": [
+          false,
+          false
+        ],
+        "items": [
+          [
+            "Tincture",
+            "Pipe"
+          ],
+          []
+        ],
+        "load": {
+          "announced_live": 1,
+          "announced_blank": 1,
+          "remaining": 2,
+          "live_left": 1,
+          "blank_left": 1,
+          "fixed": [
+            null,
+            null
+          ]
+        },
+        "turn": 0,
+        "shackled": null,
+        "shackle_broke_this_turn": false,
+        "saw_active": false,
+        "deck_counts": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "shells": [],
+      "rolls": [
+        80
+      ],
+      "steps": [
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Tincture",
+              "slot": 0,
+              "result": {
+                "kind": "Damaged",
+                "amount": 1
+              }
+            },
+            {
+              "kind": "HealCut",
+              "player": 0
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              2,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              true,
+              false
+            ],
+            "items": [
+              [
+                "Pipe"
+              ],
+              []
+            ],
+            "load": {
+              "announced_live": 1,
+              "announced_blank": 1,
+              "remaining": 2,
+              "live_left": 1,
+              "blank_left": 1,
+              "fixed": [
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": false,
+          "actions": [],
+          "error": "HealBlocked",
+          "state_after": {
+            "round": 3,
+            "score": [
+              0,
+              0
+            ],
+            "hp": [
+              2,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              true,
+              false
+            ],
+            "items": [
+              [
+                "Pipe"
+              ],
+              []
+            ],
+            "load": {
+              "announced_live": 1,
+              "announced_blank": 1,
+              "remaining": 2,
+              "live_left": 1,
+              "blank_left": 1,
+              "fixed": [
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "round_and_match_end_plus_errors",
+      "initial_state": {
+        "round": 1,
+        "score": [
+          1,
+          0
+        ],
+        "hp": [
+          2,
+          2
+        ],
+        "max_hp": 4,
+        "heal_cut": [
+          false,
+          false
+        ],
+        "items": [
+          [
+            "Hacksaw"
+          ],
+          [
+            "Flask",
+            "Flask",
+            "Shackle",
+            "Shackle"
+          ]
+        ],
+        "load": {
+          "announced_live": 4,
+          "announced_blank": 4,
+          "remaining": 8,
+          "live_left": 4,
+          "blank_left": 4,
+          "fixed": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "turn": 0,
+        "shackled": null,
+        "shackle_broke_this_turn": false,
+        "saw_active": false,
+        "deck_counts": [
+          2,
+          2,
+          2,
+          2,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "shells": [
+        "Live"
+      ],
+      "rolls": [],
+      "steps": [
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 1,
+            "target": "Opponent"
+          },
+          "ok": false,
+          "actions": [],
+          "error": "NotYourTurn",
+          "state_after": {
+            "round": 1,
+            "score": [
+              1,
+              0
+            ],
+            "hp": [
+              2,
+              2
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Hacksaw"
+              ],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 8,
+              "live_left": 4,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 9,
+            "steal_slot": null
+          },
+          "ok": false,
+          "actions": [],
+          "error": "SlotOutOfRange",
+          "state_after": {
+            "round": 1,
+            "score": [
+              1,
+              0
+            ],
+            "hp": [
+              2,
+              2
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Hacksaw"
+              ],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 8,
+              "live_left": 4,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Hacksaw",
+              "slot": 0,
+              "result": {
+                "kind": "None"
+              }
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              1,
+              0
+            ],
+            "hp": [
+              2,
+              2
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 8,
+              "live_left": 4,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": true,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": false,
+          "actions": [],
+          "error": "SlotEmpty",
+          "state_after": {
+            "round": 1,
+            "score": [
+              1,
+              0
+            ],
+            "hp": [
+              2,
+              2
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 8,
+              "live_left": 4,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": true,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "Opponent"
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "Shot",
+              "player": 0,
+              "target": "Opponent",
+              "shell": "Live",
+              "damage": 2
+            },
+            {
+              "kind": "Ejected",
+              "shell": "Live"
+            },
+            {
+              "kind": "RoundEnded",
+              "winner": 0,
+              "score": [
+                2,
+                0
+              ]
+            },
+            {
+              "kind": "MatchEnded",
+              "winner": 0,
+              "reward": "100000000000000000000000"
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 1,
+            "score": [
+              2,
+              0
+            ],
+            "hp": [
+              2,
+              0
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 7,
+              "live_left": 3,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        },
+        {
+          "move": {
+            "kind": "Fire",
+            "actor": 0,
+            "target": "Opponent"
+          },
+          "ok": false,
+          "actions": [],
+          "error": "MatchFinished",
+          "state_after": {
+            "round": 1,
+            "score": [
+              2,
+              0
+            ],
+            "hp": [
+              2,
+              0
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 4,
+              "announced_blank": 4,
+              "remaining": 7,
+              "live_left": 3,
+              "blank_left": 4,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "round1_to_round2_loser_starts",
+      "initial_state": {
+        "round": 1,
+        "score": [
+          0,
+          0
+        ],
+        "hp": [
+          1,
+          4
+        ],
+        "max_hp": 4,
+        "heal_cut": [
+          false,
+          false
+        ],
+        "items": [
+          [
+            "Tincture"
+          ],
+          []
+        ],
+        "load": {
+          "announced_live": 1,
+          "announced_blank": 1,
+          "remaining": 2,
+          "live_left": 1,
+          "blank_left": 1,
+          "fixed": [
+            null,
+            null
+          ]
+        },
+        "turn": 0,
+        "shackled": null,
+        "shackle_broke_this_turn": false,
+        "saw_active": false,
+        "deck_counts": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ]
+      },
+      "shells": [],
+      "rolls": [
+        99,
+        1,
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "steps": [
+        {
+          "move": {
+            "kind": "UseItem",
+            "actor": 0,
+            "slot": 0,
+            "steal_slot": null
+          },
+          "ok": true,
+          "actions": [
+            {
+              "kind": "ItemUsed",
+              "player": 0,
+              "item": "Tincture",
+              "slot": 0,
+              "result": {
+                "kind": "Damaged",
+                "amount": 1
+              }
+            },
+            {
+              "kind": "RoundEnded",
+              "winner": 1,
+              "score": [
+                0,
+                1
+              ]
+            },
+            {
+              "kind": "LoadStarted",
+              "live": 3,
+              "blank": 5,
+              "total": 8
+            },
+            {
+              "kind": "ItemsDealt",
+              "player": 0,
+              "items": [
+                "Loupe",
+                "Loupe",
+                "Pipe",
+                "Pipe"
+              ]
+            },
+            {
+              "kind": "ItemsDealt",
+              "player": 1,
+              "items": [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            }
+          ],
+          "error": null,
+          "state_after": {
+            "round": 2,
+            "score": [
+              0,
+              1
+            ],
+            "hp": [
+              4,
+              4
+            ],
+            "max_hp": 4,
+            "heal_cut": [
+              false,
+              false
+            ],
+            "items": [
+              [
+                "Loupe",
+                "Loupe",
+                "Pipe",
+                "Pipe"
+              ],
+              [
+                "Flask",
+                "Flask",
+                "Shackle",
+                "Shackle"
+              ]
+            ],
+            "load": {
+              "announced_live": 3,
+              "announced_blank": 5,
+              "remaining": 8,
+              "live_left": 3,
+              "blank_left": 5,
+              "fixed": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ]
+            },
+            "turn": 0,
+            "shackled": null,
+            "shackle_broke_this_turn": false,
+            "saw_active": false,
+            "deck_counts": [
+              2,
+              2,
+              2,
+              2,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

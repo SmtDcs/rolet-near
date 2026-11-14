@@ -495,7 +495,7 @@ function applyItem(
   return actions;
 }
 
-export function useItem(
+export function playItem(
   state: GameStateView,
   cfg: GameConfig,
   actor: number,
@@ -526,3 +526,5 @@ export function useItem(
     throw err;
   }
 }
+
+export const useItem = playItem;
