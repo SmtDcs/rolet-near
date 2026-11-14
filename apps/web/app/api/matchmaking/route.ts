@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import bs58 from "bs58";
 import {
   enterQueue,
   leaveQueue,
-  markOpened,
   statusQueue,
   withMatchQueue,
   type QueueView,
 } from "@/lib/matchQueue";
-import { verifyQueueSignature } from "@/lib/queueSignature";
+import { QUEUE_RECIPIENT, verifyQueueSignature } from "@/lib/queueSignature";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,9 +23,13 @@ function json(
 export async function POST(req: NextRequest) {
   let body: {
     action?: string;
-    wallet?: string;
+    accountId?: string;
+    publicKey?: string;
     message?: string;
     signature?: string;
+    nonce?: string;
+    recipient?: string;
+    callbackUrl?: string;
     token?: string;
   };
   try {
@@ -39,36 +41,49 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
 
   if (body.action === "enter") {
-    if (!body.message || !body.signature || !body.wallet) {
+    if (
+      !body.accountId ||
+      !body.publicKey ||
+      !body.message ||
+      !body.signature ||
+      !body.nonce
+    ) {
       return json({ ok: false, error: "Missing queue signature." }, 400);
     }
-    let signature: Uint8Array;
-    try {
-      signature = bs58.decode(body.signature);
-    } catch {
-      return json({ ok: false, error: "Bad queue signature." }, 400);
-    }
-    const signed = verifyQueueSignature(body.message, signature, now);
-    if (!signed || signed.wallet !== body.wallet) {
+    const signed = await verifyQueueSignature({
+      accountId: body.accountId,
+      publicKey: body.publicKey,
+      message: body.message,
+      signature: body.signature,
+      nonce: body.nonce,
+      recipient: body.recipient ?? QUEUE_RECIPIENT,
+      callbackUrl: body.callbackUrl,
+      now,
+    });
+    if (!signed) {
       return json({ ok: false, error: "Queue signature was rejected." }, 401);
     }
-    const result = await withMatchQueue((state) => enterQueue(state, signed.wallet, now));
-    return json({ ok: true, token: result.token, view: result.view, duplicate: result.duplicate });
+    const result = await withMatchQueue((state) =>
+      enterQueue(state, signed.accountId, now),
+    );
+    return json({
+      ok: true,
+      token: result.token,
+      view: result.view,
+      duplicate: result.duplicate,
+    });
   }
 
-  if (!body.token) return json({ ok: false, error: "Missing queue token." }, 400);
+  if (!body.token) {
+    return json({ ok: false, error: "Missing queue token." }, 400);
+  }
 
   if (body.action === "status") {
-    const view = await withMatchQueue((state) => statusQueue(state, body.token as string, now));
+    const view = await withMatchQueue((state) =>
+      statusQueue(state, body.token as string, now),
+    );
     if (!view) return json({ ok: false, error: "Queue session expired." }, 404);
     return json({ ok: true, view });
-  }
-
-  if (body.action === "opened") {
-    const ok = await withMatchQueue((state) => markOpened(state, body.token as string, now));
-    if (!ok) return json({ ok: false, error: "This wallet is not opening the bench." }, 409);
-    const view = await withMatchQueue((state) => statusQueue(state, body.token as string, now));
-    return json({ ok: true, view: view ?? { status: "expired" } });
   }
 
   if (body.action === "leave") {

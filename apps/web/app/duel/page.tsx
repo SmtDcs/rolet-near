@@ -11,7 +11,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import bs58 from "bs58";
 import { useRolet, useToasts, emitToast, type RoletCard } from "@/hooks/useRolet";
-import { queueMessage, reduceQueueView, type QueueView } from "@/lib/matchQueue";
+import { queueMessage, type QueueView } from "@/lib/matchQueue";
 import { decideSit, guestBase58, guestBenchView, hostBenchView, revealGate, secretForSeat } from "@/lib/seat";
 import { launchActor, pollWaitMs, seedReady, sessionAttemptFresh, timeoutClaimable } from "@/lib/chainPace";
 import {
@@ -877,35 +877,17 @@ function Lobby() {
           return;
         }
 
-        const step = reduceQueueView(view);
-        if (step.phase === "idle") {
+        if (view.status === "expired") {
           tokenRef.current = null;
           offerRef.current = null;
           tell("The queue dropped this seat.");
           return;
         }
-        if (step.phase === "enter-host" && step.matchId) {
-          doneRef.current = true;
-          router.replace(`/duel?lobby=${new BN(step.matchId).toString(16)}`);
-          return;
-        }
-        if (step.phase === "offer-open" && step.matchId) {
-          offerRef.current = { role: "host", matchId: step.matchId };
+        if (view.status === "paired") {
+          offerRef.current = { role: "host", matchId: view.matchId };
           if (!openingRef.current) {
             setSeatRole("host");
             setPhase("assigned");
-          }
-        } else if (step.phase === "offer-sit" && step.matchId) {
-          offerRef.current = { role: "guest", matchId: step.matchId };
-          if (!openingRef.current) {
-            setSeatRole("guest");
-            setPhase("sit");
-          }
-        } else if (step.phase === "opponent" && step.matchId) {
-          offerRef.current = { role: "guest", matchId: step.matchId };
-          if (!openingRef.current) {
-            setSeatRole("guest");
-            setPhase("paired");
           }
         } else if (!openingRef.current) {
           offerRef.current = null;

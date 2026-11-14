@@ -1,25 +1,37 @@
-/** In-memory pair queue. One Node process. Players do not choose the room. */
+/** In-memory symmetric pair queue for NEAR accounts. One Node process. */
 
 const WAIT_MS = 180_000;
-const UNOPENED_MS = 180_000;
-const OPEN_MS = 10 * 60_000;
+const PAIR_MS = 180_000;
 const TOKEN_MS = 10 * 60_000;
+
+/**
+ * NEAR account ID rules:
+ * - length 2..64
+ * - named accounts with dot-separated `[a-z0-9_-]` segments, or 64-hex implicit accounts
+ */
+const NEAR_ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+
+export function isValidNearAccount(accountId: string): boolean {
+  return (
+    typeof accountId === "string" &&
+    accountId.length >= 2 &&
+    accountId.length <= 64 &&
+    NEAR_ACCOUNT_RE.test(accountId)
+  );
+}
 
 export type QueueView =
   | { status: "waiting" }
-  | { status: "host"; matchId: string; opened: boolean }
-  | { status: "guest"; matchId: string; opened: boolean }
+  | { status: "paired"; matchId: string; opponent: string }
   | { status: "expired" };
 
-type Waiter = { wallet: string; since: number };
+type Waiter = { accountId: string; since: number };
 type Pair = {
   matchId: string;
-  host: string;
-  guest: string;
+  players: [string, string];
   createdAt: number;
-  openedAt: number | null;
 };
-type Token = { token: string; wallet: string; expiresAt: number };
+type Token = { token: string; accountId: string; expiresAt: number };
 
 export type QueueState = {
   seq: number;
@@ -32,18 +44,20 @@ export function createQueue(): QueueState {
   return { seq: 0, waiters: [], pairs: [], tokens: [] };
 }
 
-export function queueMessage(wallet: string, now: number): string {
-  return `ROLET queue\n${wallet}\n${now}`;
+export function queueMessage(accountId: string, now: number): string {
+  return `ROLET queue\n${accountId}\n${now}`;
 }
 
-export function parseQueueMessage(message: string): { wallet: string; at: number } | null {
+export function parseQueueMessage(
+  message: string,
+): { accountId: string; at: number } | null {
   const lines = message.split("\n");
   if (lines.length !== 3 || lines[0] !== "ROLET queue") return null;
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(lines[1])) return null;
+  if (!isValidNearAccount(lines[1])) return null;
   if (!/^\d+$/.test(lines[2])) return null;
   const at = Number(lines[2]);
   if (!Number.isSafeInteger(at)) return null;
-  return { wallet: lines[1], at };
+  return { accountId: lines[1], at };
 }
 
 function tokenOf(state: QueueState, token: string, now: number): Token | null {
@@ -54,127 +68,124 @@ function tokenOf(state: QueueState, token: string, now: number): Token | null {
 
 function sweep(state: QueueState, now: number) {
   state.waiters = state.waiters.filter((w) => now - w.since < WAIT_MS);
-  state.pairs = state.pairs.filter((p) =>
-    p.openedAt == null ? now - p.createdAt < UNOPENED_MS : now - p.openedAt < OPEN_MS,
-  );
+  state.pairs = state.pairs.filter((p) => now - p.createdAt < PAIR_MS);
   state.tokens = state.tokens.filter((t) => t.expiresAt >= now);
 }
 
-function viewFor(state: QueueState, wallet: string): QueueView {
-  const pair = state.pairs.find((p) => p.host === wallet || p.guest === wallet);
+function viewFor(state: QueueState, accountId: string): QueueView {
+  const pair = state.pairs.find(
+    (p) => p.players[0] === accountId || p.players[1] === accountId,
+  );
   if (pair) {
+    const opponent =
+      pair.players[0] === accountId ? pair.players[1] : pair.players[0];
     return {
-      status: pair.host === wallet ? "host" : "guest",
+      status: "paired",
       matchId: pair.matchId,
-      opened: pair.openedAt != null,
+      opponent,
     };
   }
-  if (state.waiters.some((w) => w.wallet === wallet)) return { status: "waiting" };
+  if (state.waiters.some((w) => w.accountId === accountId)) {
+    return { status: "waiting" };
+  }
   return { status: "expired" };
 }
 
-function issue(state: QueueState, wallet: string, now: number): string {
-  const existing = state.tokens.find((t) => t.wallet === wallet && t.expiresAt >= now);
+function issue(state: QueueState, accountId: string, now: number): string {
+  const existing = state.tokens.find(
+    (t) => t.accountId === accountId && t.expiresAt >= now,
+  );
   if (existing) {
     existing.expiresAt = now + TOKEN_MS;
     return existing.token;
   }
-  state.tokens = state.tokens.filter((t) => t.wallet !== wallet);
+  state.tokens = state.tokens.filter((t) => t.accountId !== accountId);
   const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
+  globalThis.crypto.getRandomValues(bytes);
   const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-  state.tokens.push({ token, wallet, expiresAt: now + TOKEN_MS });
+  state.tokens.push({ token, accountId, expiresAt: now + TOKEN_MS });
   return token;
 }
 
-export type QueueStep = {
-  phase: "waiting" | "opponent" | "offer-open" | "offer-sit" | "enter-host" | "idle";
-  leave: boolean;
-  matchId?: string;
-};
-
-/** What the seated wallet should do. A failed open is not a leave. */
-export function reduceQueueView(view: QueueView | null): QueueStep {
-  if (!view || view.status === "expired") return { phase: "idle", leave: false };
-  if (view.status === "waiting") return { phase: "waiting", leave: false };
-  if (view.status === "guest" && !view.opened) {
-    return { phase: "opponent", leave: false, matchId: view.matchId };
-  }
-  if (view.status === "guest") return { phase: "offer-sit", leave: false, matchId: view.matchId };
-  if (view.opened) return { phase: "enter-host", leave: false, matchId: view.matchId };
-  return { phase: "offer-open", leave: false, matchId: view.matchId };
+function randomMatchId(): string {
+  const bytes = new Uint8Array(8);
+  globalThis.crypto.getRandomValues(bytes);
+  const view = new DataView(bytes.buffer);
+  const raw = view.getBigUint64(0, true);
+  return (raw === BigInt(0) ? BigInt(1) : raw).toString();
 }
 
 export function enterQueue(
   state: QueueState,
-  wallet: string,
+  accountId: string,
   now: number,
 ): { token: string; view: QueueView; duplicate: boolean } {
-  sweep(state, now);
-  const sitting = viewFor(state, wallet);
-  if (sitting.status === "waiting") {
-    const waiter = state.waiters.find((w) => w.wallet === wallet);
-    if (waiter) waiter.since = now;
-    return { token: issue(state, wallet, now), view: sitting, duplicate: true };
+  if (!isValidNearAccount(accountId)) {
+    throw new Error(`Invalid NEAR account ID: ${accountId}`);
   }
-  if (sitting.status === "host" || sitting.status === "guest") {
-    return { token: issue(state, wallet, now), view: sitting, duplicate: true };
+  sweep(state, now);
+  const sitting = viewFor(state, accountId);
+  if (sitting.status === "waiting") {
+    const waiter = state.waiters.find((w) => w.accountId === accountId);
+    if (waiter) waiter.since = now;
+    return { token: issue(state, accountId, now), view: sitting, duplicate: true };
+  }
+  if (sitting.status === "paired") {
+    return { token: issue(state, accountId, now), view: sitting, duplicate: true };
   }
 
   const other = state.waiters.shift();
-  if (!other || other.wallet === wallet) {
-    state.waiters.push({ wallet, since: now });
-    return { token: issue(state, wallet, now), view: { status: "waiting" }, duplicate: false };
+  if (!other || other.accountId === accountId) {
+    state.waiters.push({ accountId, since: now });
+    return {
+      token: issue(state, accountId, now),
+      view: { status: "waiting" },
+      duplicate: false,
+    };
   }
 
   state.seq = (state.seq + 1) % 1000;
-  const matchId = String(now * 1000 + state.seq);
+  const matchId = randomMatchId();
   state.pairs.push({
     matchId,
-    host: other.wallet,
-    guest: wallet,
+    players: [other.accountId, accountId],
     createdAt: now,
-    openedAt: null,
   });
   return {
-    token: issue(state, wallet, now),
-    view: { status: "guest", matchId, opened: false },
+    token: issue(state, accountId, now),
+    view: { status: "paired", matchId, opponent: other.accountId },
     duplicate: false,
   };
 }
 
-export function statusQueue(state: QueueState, token: string, now: number): QueueView | null {
+export function statusQueue(
+  state: QueueState,
+  token: string,
+  now: number,
+): QueueView | null {
   sweep(state, now);
   const row = tokenOf(state, token, now);
   if (!row) return null;
   row.expiresAt = now + TOKEN_MS;
-  const waiter = state.waiters.find((w) => w.wallet === row.wallet);
+  const waiter = state.waiters.find((w) => w.accountId === row.accountId);
   if (waiter) waiter.since = now;
-  return viewFor(state, row.wallet);
-}
-
-export function markOpened(state: QueueState, token: string, now: number): boolean {
-  sweep(state, now);
-  const row = tokenOf(state, token, now);
-  if (!row) return false;
-  const pair = state.pairs.find((p) => p.host === row.wallet && p.openedAt == null);
-  if (!pair) return false;
-  pair.openedAt = now;
-  return true;
+  return viewFor(state, row.accountId);
 }
 
 export function leaveQueue(state: QueueState, token: string, now: number): void {
   sweep(state, now);
   const row = tokenOf(state, token, now);
   if (!row) return;
-  state.waiters = state.waiters.filter((w) => w.wallet !== row.wallet);
+  state.waiters = state.waiters.filter((w) => w.accountId !== row.accountId);
   state.pairs = state.pairs.filter(
-    (p) => p.openedAt != null || (p.host !== row.wallet && p.guest !== row.wallet),
+    (p) => p.players[0] !== row.accountId && p.players[1] !== row.accountId,
   );
-  state.tokens = state.tokens.filter((t) => t.wallet !== row.wallet);
+  state.tokens = state.tokens.filter((t) => t.accountId !== row.accountId);
 }
 
-const globalQueue = globalThis as typeof globalThis & { __roletMatchQueue?: QueueState };
+const globalQueue = globalThis as typeof globalThis & {
+  __roletMatchQueue?: QueueState;
+};
 
 export function getMatchQueue(): QueueState {
   if (!globalQueue.__roletMatchQueue) globalQueue.__roletMatchQueue = createQueue();
