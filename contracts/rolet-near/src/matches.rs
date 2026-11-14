@@ -7,15 +7,16 @@
 //! function-call key ile çağrıda predecessor yine oyuncu hesabıdır, kural
 //! erişimi engellemez.
 
+use crate::config::Config;
 use crate::events;
-use crate::game::{new_load, Action, GameState};
+use crate::game::{fire as game_fire, new_load, use_item as game_use_item, Action, GameError, GameState, ShellSource, Target};
 use crate::rng::{commitment, ChainSource};
 use crate::{Contract, ContractExt};
 use near_contract_standards::non_fungible_token::TokenId;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::{Base64VecU8, U64};
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{env, near, require, AccountId, NearToken};
+use near_sdk::{env, near, require, AccountId, NearToken, Promise};
 
 /// `Match.log` kapasitesi (DESIGN §4.5: son 32 aksiyon).
 pub const LOG_CAP: usize = 32;
@@ -122,7 +123,7 @@ pub fn now_ms() -> u64 {
 }
 
 /// Aksiyonu maç kaydına yazar (seq + son `LOG_CAP` giriş) ve NEP-297 olayı
-/// loglar (T-114). T-112'de fire/use_item, burada reveal kullanır.
+/// loglar (T-114).
 pub fn push_action(m: &mut Match, action: Action) {
     m.seq += 1;
     if m.log.len() >= LOG_CAP {
@@ -131,6 +132,17 @@ pub fn push_action(m: &mut Match, action: Action) {
     }
     m.log.push(action.clone());
     events::log_action(&action);
+}
+
+/// Çağırıcının maçtaki oyuncu indisi (0 | 1); katılımcı değilse panik.
+fn participant_index(m: &Match, player: &AccountId) -> usize {
+    if &m.players[0] == player {
+        0
+    } else if &m.players[1] == player {
+        1
+    } else {
+        panic!("not a participant")
+    }
 }
 
 impl Contract {
@@ -181,6 +193,113 @@ impl Contract {
             state.active_match = None;
         }
         self.players.insert(player, &state);
+    }
+
+    /// Maçı kazanan ile sonlandırır (T-112 `fire`/`use_item`, T-113 `claim_timeout`):
+    /// token kilitleri açılır (durability iade edilmez), oyuncuların `active_match`i
+    /// temizlenir, istatistikler yazılır, ödül treasury yeterliyse doğrudan transfer
+    /// edilir, yetersizse `owed` olarak kaydedilir (DESIGN §4.7).
+    pub(crate) fn finish_match(&mut self, m: &mut Match, winner: u8) {
+        m.status = Status::Finished;
+        m.winner = Some(winner);
+        m.deadline_ms = 0;
+
+        let reward = self.config.reward;
+        for i in 0..2usize {
+            let token_id = &m.tokens[i];
+            if let Some(mut ch) = self.character.get(token_id) {
+                if ch.locked_in == Some(m.id) {
+                    ch.locked_in = None;
+                    self.character.insert(token_id, &ch);
+                }
+            }
+
+            let account = &m.players[i];
+            let mut st = self.player_state(account);
+            if st.active_match == Some(m.id) {
+                st.active_match = None;
+            }
+            st.played += 1;
+            if i == winner as usize {
+                st.wins += 1;
+                if reward > NearToken::ZERO {
+                    if self.treasury >= reward {
+                        self.treasury = self.treasury.saturating_sub(reward);
+                        Promise::new(account.clone()).transfer(reward).detach();
+                    } else {
+                        st.owed = st.owed.saturating_add(reward);
+                    }
+                }
+            } else {
+                st.losses += 1;
+            }
+            self.players.insert(account, &st);
+        }
+    }
+
+    /// `fire` ve `use_item` ortak sarmalayıcısı (T-112). Testlerde `src_override`
+    /// ile `ScriptedSource` enjekte edilebilir; üretimde `None` (`ChainSource`).
+    fn apply_game_action(
+        &mut self,
+        match_id: u64,
+        src_override: Option<&mut dyn ShellSource>,
+        step: impl FnOnce(&mut GameState, &Config, u8, &mut dyn ShellSource) -> Result<Vec<Action>, GameError>,
+    ) -> Vec<Action> {
+        require_direct_call();
+        let player = env::predecessor_account_id();
+        let mut m = self.match_or_panic(match_id);
+        require!(m.status == Status::Active, "match is not active");
+        let actor = participant_index(&m, &player) as u8;
+
+        let actions = match src_override {
+            Some(src) => step(&mut m.game, &self.config, actor, src),
+            None => {
+                let mut src = ChainSource::new(m.seed, &mut m.draw_nonce);
+                step(&mut m.game, &self.config, actor, &mut src)
+            }
+        }
+        .unwrap_or_else(|e| panic!("{e}"));
+
+        let mut match_winner: Option<u8> = None;
+        for action in &actions {
+            if let Action::MatchEnded { winner, .. } = action {
+                match_winner = Some(*winner);
+            }
+            push_action(&mut m, action.clone());
+        }
+
+        if let Some(winner) = match_winner {
+            self.finish_match(&mut m, winner);
+        } else {
+            m.deadline_ms = now_ms() + self.config.turn_ms;
+        }
+        self.matches.insert(&m.id, &m);
+        actions
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fire_with(
+        &mut self,
+        match_id: U64,
+        target: Target,
+        src: &mut dyn ShellSource,
+    ) -> Vec<Action> {
+        self.apply_game_action(match_id.0, Some(src), |game, cfg, actor, s| {
+            game_fire(game, cfg, actor, target, s)
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn use_item_with(
+        &mut self,
+        match_id: U64,
+        slot: u8,
+        steal_slot: Option<u8>,
+        src: &mut dyn ShellSource,
+    ) -> Vec<Action> {
+        self.apply_game_action(match_id.0, Some(src), |game, cfg, actor, s| {
+            game_use_item(game, cfg, actor, slot, steal_slot, s)
+        })
     }
 }
 
@@ -268,13 +387,7 @@ impl Contract {
         let player = env::predecessor_account_id();
         let mut m = self.match_or_panic(match_id.0);
         require!(m.status == Status::Revealing, "match is not revealing");
-        let idx = if m.players[0] == player {
-            0
-        } else if m.players[1] == player {
-            1
-        } else {
-            panic!("not a participant")
-        };
+        let idx = participant_index(&m, &player);
         require!(m.secrets[idx].is_none(), "already revealed");
         let secret: [u8; 32] = secret.0.try_into().expect("uzunluk yukarıda doğrulandı");
         require!(
@@ -321,6 +434,24 @@ impl Contract {
             push_action(&mut m, action);
         }
         self.matches.insert(&m.id, &m);
+    }
+
+    /// Sırası gelen oyuncunun ateş hamlesi (T-112, DESIGN §4.7).
+    /// `ChainSource` ile anlık fişek çekilir (lazy draw); aksiyonlar loga ve
+    /// NEP-297 olaylarına yazılır, `deadline_ms` yenilenir; maç biterse ödül
+    /// transfer edilir (treasury yetersizse `owed`), kilitler açılır.
+    pub fn fire(&mut self, match_id: U64, target: Target) -> Vec<Action> {
+        self.apply_game_action(match_id.0, None, |game, cfg, actor, src| {
+            game_fire(game, cfg, actor, target, src)
+        })
+    }
+
+    /// Sırası gelen oyuncunun eşya kullanımı (T-112, DESIGN §4.7).
+    /// `steal_slot` yalnızca `Lockpick` için gereklidir.
+    pub fn use_item(&mut self, match_id: U64, slot: u8, steal_slot: Option<u8>) -> Vec<Action> {
+        self.apply_game_action(match_id.0, None, |game, cfg, actor, src| {
+            game_use_item(game, cfg, actor, slot, steal_slot, src)
+        })
     }
 }
 
@@ -719,5 +850,250 @@ mod tests {
         assert_eq!(m.secrets[0], Some([1u8; 32]));
         assert_eq!(m.seq, 0);
         assert!(m.log.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // T-112: fire / use_item kontrat metodları
+    // ------------------------------------------------------------------
+
+    use crate::game::{Item, ItemResult, Load, ScriptedSource, Shell};
+    use near_sdk::test_utils::{get_created_receipts, get_logs};
+
+    fn switch_at(account: &str, attached: NearToken, ts_ms: u64) {
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(account.parse().unwrap())
+            .predecessor_account_id(account.parse().unwrap())
+            .attached_deposit(attached)
+            .block_timestamp(ts_ms * 1_000_000)
+            .build();
+        near_sdk::testing_env!(ctx);
+    }
+
+    /// Revealing'i tamamlayıp Active maç döndürür (başlangıç zamanı `ts_ms = 1_000`).
+    fn setup_active() -> Contract {
+        switch_at("owner.testnet", NearToken::ZERO, 1_000);
+        let mut c = Contract::new("owner.testnet".parse().unwrap(), Config::default());
+        c.treasury = NearToken::from_near(10);
+        for (who, kind) in [("alice.testnet", Kind::Kuleci), ("bob.testnet", Kind::Ayarci)] {
+            switch_at(who, NearToken::from_near(1), 1_000);
+            c.buy_character(kind);
+        }
+        switch_at("alice.testnet", NearToken::ZERO, 1_000);
+        c.join(U64(7), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", 7), alice_token(&c));
+        switch_at("bob.testnet", NearToken::ZERO, 1_000);
+        c.join(U64(7), "alice.testnet".parse().unwrap(), real_commit(2, "bob.testnet", 7), bob_token(&c));
+        c.reveal(U64(7), secret_of(2));
+        switch_at("alice.testnet", NearToken::ZERO, 1_000);
+        c.reveal(U64(7), secret_of(1));
+        c
+    }
+
+    /// T-112 bitti kuralı: ScriptedSource ile senaryolu tam maç → ödül
+    /// kazanan hesabına transfer edilir, treasury düşer, token kilitleri
+    /// ve active_match temizlenir, istatistikler yazılır.
+    #[test]
+    fn full_scripted_match_pays_winner_and_unlocks() {
+        let mut c = setup_active();
+        let treasury_before = c.treasury;
+        // R1 yükünü ve ilk sırayı senaryoya göre sabitle (deterministik).
+        let mut m = c.match_or_panic(7);
+        m.game.load = Load::new(2, 2);
+        m.game.turn = 0;
+        c.matches.insert(&7, &m);
+
+        // Fişek sırası:
+        // R1: Live (A->B), Blank (B->B), Blank (B->A), Live (A->B, R1 biter)
+        // R2 yük1 (total=4, live=2): Blank (B->A), Live (A Loupe + Hacksaw + A->B 2dmg),
+        //   Blank (B Pipe + B->A), Live (A->B, yük biter -> R2 yük2)
+        // R2 yük2 (total=2, live=1): Blank (B->A), Live (A Hacksaw + A->B 2dmg -> R2 biter!)
+        let shells = vec![
+            Shell::Live, Shell::Blank, Shell::Blank, Shell::Live,
+            Shell::Blank, Shell::Live, Shell::Blank, Shell::Live,
+            Shell::Blank, Shell::Live,
+        ];
+        // Rolls:
+        // R2 yük1: new_load(2,1 -> total=4, live=2) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
+        // R2 yük2: new_load(0,1 -> total=2, live=1) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
+        let rolls = vec![
+            2, 1, 4, 0, 1, 2,
+            0, 1, 4, 0, 1, 2,
+        ];
+        let mut src = ScriptedSource::with_rolls(shells, rolls);
+
+        // R1
+        switch_at("alice.testnet", NearToken::ZERO, 2_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+        switch_at("bob.testnet", NearToken::ZERO, 3_000);
+        c.fire_with(U64(7), Target::SelfTarget, &mut src);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+        switch_at("alice.testnet", NearToken::ZERO, 4_000);
+        let r1_end = c.fire_with(U64(7), Target::Opponent, &mut src);
+        assert!(r1_end.iter().any(|a| matches!(a, Action::RoundEnded { winner: 0, score: [1, 0] })));
+
+        // R2: kaybeden (Bob) başlar, 4 HP ve eşyalarla.
+        switch_at("bob.testnet", NearToken::ZERO, 5_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+        assert_eq!(c.match_or_panic(7).deadline_ms, 5_000 + 45_000);
+
+        switch_at("alice.testnet", NearToken::ZERO, 6_000);
+        let loupe_res = c.use_item_with(U64(7), 1, None, &mut src);
+        assert_eq!(
+            loupe_res,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Loupe,
+                slot: 1,
+                result: ItemResult::Private { pos: 0, shell: Shell::Live },
+            }]
+        );
+        assert_eq!(c.match_or_panic(7).deadline_ms, 6_000 + 45_000);
+        c.use_item_with(U64(7), 0, None, &mut src); // Hacksaw
+        c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar
+
+        switch_at("bob.testnet", NearToken::ZERO, 7_000);
+        c.use_item_with(U64(7), 0, None, &mut src); // Pipe (+1 -> 3 HP)
+        c.fire_with(U64(7), Target::Opponent, &mut src); // Blank
+
+        switch_at("alice.testnet", NearToken::ZERO, 8_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src); // Live -> 2 HP, R2 yük2 başlar
+
+        switch_at("bob.testnet", NearToken::ZERO, 9_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src); // Blank
+
+        switch_at("alice.testnet", NearToken::ZERO, 10_000);
+        c.use_item_with(U64(7), 0, None, &mut src); // Hacksaw (R2 yük2'den)
+        let end_actions = c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar -> 0 HP!
+        assert!(end_actions.iter().any(|a| matches!(a, Action::MatchEnded { winner: 0, .. })));
+
+        // Maç sonu durumu, ödül, kilitler ve istatistikler.
+        let m = c.match_or_panic(7);
+        assert_eq!(m.status, Status::Finished);
+        assert_eq!(m.winner, Some(0));
+        assert_eq!(m.deadline_ms, 0);
+        assert_eq!(c.treasury, treasury_before.saturating_sub(NearToken::from_millinear(100)));
+
+        let alice_st = c.player_state(&"alice.testnet".parse().unwrap());
+        let bob_st = c.player_state(&"bob.testnet".parse().unwrap());
+        assert_eq!(alice_st, PlayerState { active_match: None, wins: 1, losses: 0, played: 1, owed: NearToken::ZERO });
+        assert_eq!(bob_st, PlayerState { active_match: None, wins: 0, losses: 1, played: 1, owed: NearToken::ZERO });
+
+        let alice_ch = c.character_state(&"kuleci:1".to_string()).unwrap();
+        let bob_ch = c.character_state(&"ayarci:2".to_string()).unwrap();
+        assert_eq!(alice_ch.locked_in, None);
+        assert_eq!(bob_ch.locked_in, None);
+        assert_eq!(alice_ch.durability, 9);
+        assert_eq!(bob_ch.durability, 9);
+
+        let receipts = get_created_receipts();
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].receiver_id, "alice.testnet".parse::<AccountId>().unwrap());
+        assert!(receipts[0].actions.iter().any(|a| match a {
+            near_sdk::mock::MockAction::Transfer { deposit, .. } =>
+                *deposit == NearToken::from_millinear(100),
+            _ => false,
+        }));
+    }
+
+    /// T-112: treasury yetersizse maç yine biter, ödül `owed` olarak yazılır
+    /// ve transfer receipt'i oluşturulmaz.
+    #[test]
+    fn insufficient_treasury_credits_owed() {
+        let mut c = setup_active();
+        c.treasury = NearToken::from_millinear(50); // < 100 mNEAR ödül
+        let mut m = c.match_or_panic(7);
+        m.game.score = [1, 0];
+        m.game.hp = [2, 1];
+        m.game.load = Load::new(1, 1);
+        m.game.turn = 0;
+        c.matches.insert(&7, &m);
+
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        switch_at("alice.testnet", NearToken::ZERO, 2_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+
+        assert_eq!(c.match_or_panic(7).status, Status::Finished);
+        assert_eq!(c.treasury, NearToken::from_millinear(50));
+        assert!(get_created_receipts().is_empty());
+        let alice_st = c.player_state(&"alice.testnet".parse().unwrap());
+        assert_eq!(alice_st.wins, 1);
+        assert_eq!(alice_st.owed, NearToken::from_millinear(100));
+        assert_eq!(alice_st.active_match, None);
+        assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
+    }
+
+    /// T-112: public `fire` ChainSource kullanır, `draw_nonce`, `seq`, `log`,
+    /// NEP-297 olayları ve `deadline_ms` güncellenir.
+    #[test]
+    fn public_fire_uses_chain_source_and_updates_log() {
+        let mut c = setup_active();
+        let m_before = c.match_or_panic(7);
+        let turn_acc = m_before.players[m_before.game.turn as usize].to_string();
+        let nonce_before = m_before.draw_nonce;
+        let seq_before = m_before.seq;
+
+        switch_at(&turn_acc, NearToken::ZERO, 5_000);
+        let actions = c.fire(U64(7), Target::Opponent);
+        assert!(!actions.is_empty());
+
+        let m_after = c.match_or_panic(7);
+        assert_eq!(m_after.draw_nonce, nonce_before + 1);
+        assert_eq!(m_after.seq, seq_before + actions.len() as u64);
+        assert_eq!(m_after.deadline_ms, 5_000 + 45_000);
+        assert_eq!(&m_after.log[m_after.log.len() - actions.len()..], actions.as_slice());
+
+        let logs = get_logs();
+        assert_eq!(logs.len(), actions.len());
+        assert!(logs[0].starts_with("EVENT_JSON:"));
+    }
+
+    /// T-112: log uzunluğu LOG_CAP (32) sınırında budanır; `seq` monotoon artar.
+    #[test]
+    fn action_log_caps_at_32_entries() {
+        let c = setup_active();
+        let mut m = c.match_or_panic(7);
+        for _ in 0..40 {
+            push_action(&mut m, Action::HealCut);
+        }
+        assert_eq!(m.seq, 41); // 1 (LoadStarted) + 40
+        assert_eq!(m.log.len(), LOG_CAP);
+    }
+
+    /// T-112: yanlış sıra, katılımcı olmayan ve Active dışı durumlar reddedilir.
+    #[test]
+    #[should_panic(expected = "not your turn")]
+    fn public_fire_rejects_wrong_turn() {
+        let mut c = setup_active();
+        let turn = c.match_or_panic(7).game.turn as usize;
+        let other = c.match_or_panic(7).players[1 - turn].to_string();
+        switch_at(&other, NearToken::ZERO, 2_000);
+        c.fire(U64(7), Target::Opponent);
+    }
+
+    #[test]
+    #[should_panic(expected = "not a participant")]
+    fn public_use_item_rejects_outsider() {
+        let mut c = setup_active();
+        switch_at("charlie.testnet", NearToken::ZERO, 2_000);
+        c.use_item(U64(7), 0, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "match is not active")]
+    fn public_fire_rejects_non_active_match() {
+        let mut c = setup_revealing();
+        c.fire(U64(7), Target::Opponent);
+    }
+
+    #[test]
+    #[should_panic(expected = "contract call rejected")]
+    fn public_fire_rejects_contract_mediated_call() {
+        let mut c = setup_active();
+        let turn_acc = c.match_or_panic(7).players[c.match_or_panic(7).game.turn as usize].clone();
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(turn_acc)
+            .predecessor_account_id("evil.testnet".parse().unwrap())
+            .build();
+        near_sdk::testing_env!(ctx);
+        c.fire(U64(7), Target::Opponent);
     }
 }
