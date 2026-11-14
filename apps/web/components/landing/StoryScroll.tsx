@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { C, F } from "./theme";
-import { ChamberDial } from "@/components/duel/ChamberDial";
+import { ChamberDial } from "./ChamberDial";
 
 /**
  * Scroll brief. One sticky stage, five beats. Scroll only changes which beat

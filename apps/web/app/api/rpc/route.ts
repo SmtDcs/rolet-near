@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimitPlan } from "@/lib/chainPace";
+import { rateLimitPlan } from "@/lib/rateLimit";
 
 const DEFAULT_NEAR_RPC = "https://rpc.testnet.near.org";
 

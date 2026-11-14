@@ -3,7 +3,7 @@
  * and error classifier for retry/key-rotation decisions (F2-4).
  */
 
-import { rateLimitedError } from "./chainPace";
+import { rateLimitedError } from "./rateLimit";
 import { base64ToBytes } from "./nearCommit";
 import { isAllowanceError, isAccessKeyMissing, isMethodDenied } from "./nearKey";
 import { isAction, type Action } from "./nearTypes";
