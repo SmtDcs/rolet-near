@@ -54,6 +54,12 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | @near-js/utils | **2.5.1** | https://www.npmjs.com/package/@near-js/utils |
 | tsx (devDependency) | **4.23.15** | https://www.npmjs.com/package/tsx |
 | near-api-js (şemsiye paket) | **kullanılmaz** (`PLAN-F2` §2: doğrudan `@near-js/* 2.5.1` kullanılır; `@meteorwallet/sdk` alt bağımlılığı için `pnpm-workspace.yaml` `overrides` ile tüm `@near-js/*` paketleri tek kopya `2.5.1` olarak kilitlenmiştir) | https://www.npmjs.com/package/near-api-js · https://docs.near.org/build/front-end/near-api-js/quick-reference |
+| three | **0.176.0** (F3-0'da `^` kaldırılarak sabitlendi) | https://www.npmjs.com/package/three |
+| @types/three | **0.176.0** (F3-0'da `^` kaldırılarak sabitlendi) | https://www.npmjs.com/package/@types/three |
+| @react-three/fiber | **9.6.1** (F3-0'da `^` kaldırılarak sabitlendi) | https://www.npmjs.com/package/@react-three/fiber |
+| @react-three/drei | **10.7.7** (F3-0'da `^` kaldırılarak sabitlendi) | https://www.npmjs.com/package/@react-three/drei |
+| gsap | **3.15.0** (F3-0'da `^` kaldırılarak sabitlendi) | https://www.npmjs.com/package/gsap |
+| @react-three/postprocessing | 3.0.4 *(F3 sahnesinde kullanılmaz; T-312'de kaldırılacak)* | https://www.npmjs.com/package/@react-three/postprocessing |
 
 ## Gaz ölçümleri (`VALUES-FIX-05` / `FIX-16`, sandbox 2026-11-14)
 
