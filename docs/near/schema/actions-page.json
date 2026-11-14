@@ -1,0 +1,66 @@
+{
+  "first_seq": 11,
+  "actions": [
+    {
+      "kind": "LoadStarted",
+      "live": 5,
+      "blank": 3,
+      "total": 8
+    },
+    {
+      "kind": "ItemsDealt",
+      "player": 0,
+      "items": [
+        "Loupe",
+        "Hacksaw"
+      ]
+    },
+    {
+      "kind": "ItemUsed",
+      "player": 0,
+      "item": "Loupe",
+      "slot": 0,
+      "result": {
+        "kind": "Private",
+        "pos": 0,
+        "shell": "Live"
+      }
+    },
+    {
+      "kind": "Shot",
+      "player": 0,
+      "target": "Opponent",
+      "shell": "Live",
+      "damage": 1
+    },
+    {
+      "kind": "Ejected",
+      "shell": "Live"
+    },
+    {
+      "kind": "TurnSkipped",
+      "player": 1
+    },
+    {
+      "kind": "HealCut",
+      "player": 1
+    },
+    {
+      "kind": "RoundEnded",
+      "winner": 0,
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "kind": "MatchEnded",
+      "winner": 0,
+      "reward": "100000000000000000000000"
+    },
+    {
+      "kind": "TimeoutClaimed",
+      "by": 0
+    }
+  ]
+}

@@ -390,7 +390,7 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 Yükleme sayısı üretimi (`Config`'ten ayarlanabilir, Rolet varsayılanları):
 Tabanca her zaman `load_size` gözlüdür (varsayılan `8`); her yüklemede dolu sayısı `ChainSource` ile `min_live..=max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır (`blank = load_size - live`). Seçilen sayılar `MatchView` ve `Action::LoadStarted` üzerinden iki oyuncuya açıkça duyurulur; sıra ise gizli kalır ve atış/eşya anında lazy draw ile çekilir.
 
-Eşya dağıtımı (EK2 — ortak deste): Maç başında 9 eşya türünün her birinden `Config.copies_per_item` (varsayılan `4`, toplam `36` kart) kopya içeren ortak bir deste (`GameState.deck_counts: [u8; 9]`) oluşturulur. R1 dahil her round ve yüklemede ellere bu ortak desteden `items_per_load` (varsayılan `4`) kart **iadesiz** dağıtılır; çekilecek tür dağıtım anında `ChainSource` ile kalan kart sayıları oranında seçilir, deste biterse `[copies_per_item; 9]` olarak yeniden doldurulur. El doluysa (4 eşya, `Config.max_items`) yalnızca boş slot kadar kart çekilir; çekilmeyen kartlar ortak destede kalır. Kalan deste sayısı `get_deck_remaining` ve `MatchView.deck_remaining` ile görülebilir (`RoundConfig.item_bag` FIX-F2-3 ile kaldırılmıştır).
+Eşya dağıtımı (EK2 — ortak deste): Maç başında 9 eşya türünün her birinden `Config.copies_per_item` (varsayılan `4`, toplam `36` kart) kopya içeren ortak bir deste (`GameState.deck_counts: [u8; 9]`) oluşturulur. R1 dahil her round ve yüklemede ellere bu ortak desteden `items_per_load` (varsayılan `4`) kart **iadesiz** dağıtılır; çekilecek tür dağıtım anında `ChainSource` ile kalan kart sayıları oranında seçilir, deste biterse `[copies_per_item; 9]` olarak yeniden doldurulur. El doluysa (4 eşya, `Config.max_items`) yalnızca boş slot kadar kart çekilir; çekilmeyen kartlar ortak destede kalır. Kalan deste sayıları `MatchView.game.deck_counts` içinden tek yerden okunur (`RoundConfig.item_bag` FIX-F2-3 ile, mükerrer `deck_remaining`/`get_deck_remaining` ise FIX-F2-5 ile kaldırılmıştır).
 
 ### 4.7 Kontrat metodları
 
@@ -409,7 +409,7 @@ Eşya dağıtımı (EK2 — ortak deste): Maç başında 9 eşya türünün her 
 | `set_config`, `pause`, `withdraw_ops` | call | owner | |
 | `get_match(match_id)` → `MatchView` | view | | gizli alan yok; `fixed` dahil (v1 sınırı) |
 | `get_actions(match_id, since_seq)` → `ActionsPage { first_seq, actions }` | view | | istemci animasyon kuyruğu (boşlukta snapshot) |
-| `get_player(account)`, `get_character(token_id)`, `get_config()`, `get_treasury()`, `get_deck_remaining(match_id)`, `leaderboard(from, limit)` | view | | |
+| `get_player(account)`, `get_character(token_id)`, `get_config()`, `get_treasury()`, `leaderboard(from, limit)` | view | | |
 
 Maç bitince ödül **aynı `fire`/`claim_timeout` çağrısı içinde** `Promise::new(winner).transfer(reward)` ile gönderilir (ayrı `settle` yok). Treasury yetersizse maç yine biter, ödül `owed` olarak kaydedilir ve `claim_reward()` ile sonradan çekilir.
 

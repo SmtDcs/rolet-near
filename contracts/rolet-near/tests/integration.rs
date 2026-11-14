@@ -207,13 +207,8 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
         .expect("maç mevcut olmalı");
     assert_eq!(m_active.status, Status::Active);
     // EK2: 36 kartlık ortak desteden R1 başında 4+4 = 8 kart dağıtıldı → 28 kaldı.
-    assert_eq!(m_active.deck_remaining, 28);
-    let deck_rem: Option<u16> = contract
-        .view("get_deck_remaining")
-        .args_json(json!({ "match_id": U64(match_id) }))
-        .await?
-        .json()?;
-    assert_eq!(deck_rem, Some(28));
+    let deck_rem: u16 = m_active.game.deck_counts.iter().map(|&c| c as u16).sum();
+    assert_eq!(deck_rem, 28);
 
     // Hamle döngüsünden önce bakiyeleri kaydet.
     let alice_bal_before = alice.view_account().await?.balance;

@@ -31,8 +31,6 @@ pub struct MatchView {
     /// Her oyuncunun `reveal` yapıp yapmadığı (sırrın kendisi gizlidir).
     pub revealed: [bool; 2],
     pub game: GameState,
-    /// Ortak eşya destesinde kalan kart sayısı (EK2).
-    pub deck_remaining: u16,
     pub reveal_deadline_ms: u64,
     pub deadline_ms: u64,
     pub winner: Option<u8>,
@@ -42,7 +40,6 @@ pub struct MatchView {
 
 impl From<Match> for MatchView {
     fn from(m: Match) -> Self {
-        let deck_remaining = m.game.deck_remaining();
         Self {
             id: U64(m.id),
             status: m.status,
@@ -50,7 +47,6 @@ impl From<Match> for MatchView {
             tokens: m.tokens,
             revealed: [m.secrets[0].is_some(), m.secrets[1].is_some()],
             game: m.game,
-            deck_remaining,
             reveal_deadline_ms: m.reveal_deadline_ms,
             deadline_ms: m.deadline_ms,
             winner: m.winner,
@@ -187,11 +183,6 @@ impl Contract {
         self.treasury
     }
 
-    /// Ortak eşya destesinde kalan toplam kart sayısı (EK2).
-    pub fn get_deck_remaining(&self, match_id: U64, players: Option<[AccountId; 2]>) -> Option<u16> {
-        self.lookup_match(match_id.0, players).map(|m| m.game.deck_remaining())
-    }
-
     /// Galibiyete göre azalan sıralı top-100 oyuncu listesi (sayfalı; O(1) okuma, S-09).
     pub fn leaderboard(&self, from: Option<u64>, limit: Option<u64>) -> Vec<LeaderboardEntry> {
         let skip = from.unwrap_or(0) as usize;
@@ -309,8 +300,8 @@ mod tests {
 
         // R1 başlangıcı: seq = 3 (LoadStarted + 2× ItemsDealt), boşluk yok (first_seq = 1).
         // Ortak 36 kartlık desteden R1'de 4+4 = 8 kart çekildi → 28 kart kaldı (EK2).
-        assert_eq!(c.get_deck_remaining(U64(7), None), Some(28));
-        assert_eq!(c.get_match(U64(7), None).unwrap().deck_remaining, 28);
+        let mv = c.get_match(U64(7), None).unwrap();
+        assert_eq!(mv.game.deck_counts.iter().map(|&x| x as u16).sum::<u16>(), 28);
         let init_page = c.get_actions(U64(7), 0, None);
         assert_eq!(init_page.first_seq, 1);
         assert_eq!(init_page.actions.len(), 3);
@@ -463,5 +454,23 @@ mod tests {
         assert_eq!(parsed.id, U64(7));
         assert_eq!(parsed.status, Status::Active);
         assert_eq!(parsed.revealed, [true, true]);
+        assert_eq!(parsed.game.deck_counts, [3, 3, 3, 4, 3, 4, 4, 4, 4]);
+    }
+
+    /// FIX-F2-5: `docs/near/schema/actions-page.json` gerçek `ActionsPage`
+    /// şemasıyla birebir deserialize olmalı.
+    #[test]
+    fn actions_page_example_json_deserializes() {
+        let raw = include_str!("../../../docs/near/schema/actions-page.json");
+        let parsed: ActionsPage =
+            serde_json::from_str(raw).expect("örnek JSON geçerli ActionsPage");
+        assert_eq!(parsed.first_seq, 11);
+        assert_eq!(parsed.actions.len(), 10);
+        assert!(matches!(parsed.actions[0], Action::LoadStarted { live: 5, blank: 3, total: 8 }));
+        assert!(matches!(
+            parsed.actions[2],
+            Action::ItemUsed { result: ItemResult::Private { pos: 0, shell: Shell::Live }, .. }
+        ));
+        assert!(matches!(parsed.actions[8], Action::MatchEnded { winner: 0, .. }));
     }
 }
