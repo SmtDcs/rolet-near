@@ -1,6 +1,8 @@
 import type {
   Action,
   GameStateView,
+  Item,
+  ItemResult,
   LoadView,
   Shell,
   Target,
@@ -325,4 +327,202 @@ export function fire(
     reload(state, cfg, src, actions);
   }
   return actions;
+}
+
+export function checkItem(
+  state: GameStateView,
+  cfg: GameConfig,
+  actor: number,
+  item: Item,
+  stealSlot: number | null,
+): void {
+  switch (item) {
+    case "Loupe":
+    case "Flask":
+    case "Magnet":
+      if (state.load.remaining === 0) {
+        throw new GameRuleError("NoShellsLeft");
+      }
+      break;
+    case "Ticker":
+      break;
+    case "Pipe":
+      if (state.heal_cut[actor]) {
+        throw new GameRuleError("HealBlocked");
+      }
+      if (state.hp[actor] >= state.max_hp) {
+        throw new GameRuleError("ItemBlocked");
+      }
+      break;
+    case "Tincture":
+      if (state.heal_cut[actor]) {
+        throw new GameRuleError("HealBlocked");
+      }
+      break;
+    case "Shackle":
+      if (state.shackled === 1 - actor) {
+        throw new GameRuleError("AlreadyShackled");
+      }
+      if (state.shackle_broke_this_turn) {
+        throw new GameRuleError("ShackleJustBroke");
+      }
+      break;
+    case "Hacksaw":
+      if (state.saw_active) {
+        throw new GameRuleError("SawAlreadyActive");
+      }
+      break;
+    case "Lockpick": {
+      if (
+        stealSlot === null ||
+        !Number.isInteger(stealSlot) ||
+        stealSlot < 0 ||
+        stealSlot >= cfg.max_items
+      ) {
+        throw new GameRuleError("SlotOutOfRange");
+      }
+      const opponent = 1 - actor;
+      if (stealSlot >= state.items[opponent].length) {
+        throw new GameRuleError("SlotEmpty");
+      }
+      const stolen = state.items[opponent][stealSlot];
+      if (stolen === "Lockpick") {
+        throw new GameRuleError("ItemBlocked");
+      }
+      checkItem(state, cfg, actor, stolen, null);
+      break;
+    }
+  }
+}
+
+function applyItem(
+  state: GameStateView,
+  cfg: GameConfig,
+  actor: number,
+  item: Item,
+  slot: number,
+  stealSlot: number | null,
+  src: ShellSource,
+): Action[] {
+  checkItem(state, cfg, actor, item, stealSlot);
+  const actions: Action[] = [];
+  const itemUsed = (result: ItemResult): Action => ({
+    kind: "ItemUsed",
+    player: actor,
+    item,
+    slot,
+    result,
+  });
+
+  switch (item) {
+    case "Loupe": {
+      const shell = loadCurrent(state.load, src);
+      actions.push(itemUsed({ kind: "Private", pos: 0, shell }));
+      break;
+    }
+    case "Pipe": {
+      state.hp[actor] += 1;
+      actions.push(itemUsed({ kind: "Healed", amount: 1 }));
+      break;
+    }
+    case "Flask": {
+      const shell = loadCurrent(state.load, src);
+      loadAdvance(state.load, shell);
+      actions.push(itemUsed({ kind: "Ejected", shell }));
+      actions.push({ kind: "Ejected", shell });
+      if (state.load.remaining === 0) {
+        state.saw_active = false;
+        endTurn(state, actor, actions);
+        reload(state, cfg, src, actions);
+      }
+      break;
+    }
+    case "Shackle": {
+      state.shackled = 1 - actor;
+      actions.push(itemUsed({ kind: "None" }));
+      break;
+    }
+    case "Hacksaw": {
+      state.saw_active = true;
+      actions.push(itemUsed({ kind: "None" }));
+      break;
+    }
+    case "Ticker": {
+      if (state.load.remaining < 2) {
+        actions.push(itemUsed({ kind: "None" }));
+      } else {
+        const max = state.load.remaining - 1;
+        const pos = 1 + src.roll(max);
+        const shell = loadPeekAt(state.load, pos, src);
+        actions.push(itemUsed({ kind: "Private", pos, shell }));
+      }
+      break;
+    }
+    case "Magnet": {
+      const shell = loadCurrent(state.load, src);
+      const flipped: Shell = shell === "Live" ? "Blank" : "Live";
+      state.load.fixed[0] = flipped;
+      if (shell === "Live") {
+        state.load.live_left -= 1;
+        state.load.blank_left += 1;
+      } else {
+        state.load.blank_left -= 1;
+        state.load.live_left += 1;
+      }
+      actions.push(itemUsed({ kind: "None" }));
+      break;
+    }
+    case "Lockpick": {
+      const steal = stealSlot as number;
+      const opponent = 1 - actor;
+      const [stolen] = state.items[opponent].splice(steal, 1);
+      actions.push(itemUsed({ kind: "None" }));
+      actions.push(...applyItem(state, cfg, actor, stolen, steal, null, src));
+      break;
+    }
+    case "Tincture": {
+      if (src.roll(100) < cfg.tincture_good_pct) {
+        const healed = Math.min(2, Math.max(0, state.max_hp - state.hp[actor]));
+        state.hp[actor] += healed;
+        actions.push(itemUsed({ kind: "Healed", amount: healed }));
+      } else {
+        actions.push(itemUsed({ kind: "Damaged", amount: 1 }));
+        applyDamage(state, cfg, actor, 1, actions, src);
+      }
+      break;
+    }
+  }
+  return actions;
+}
+
+export function useItem(
+  state: GameStateView,
+  cfg: GameConfig,
+  actor: number,
+  slot: number,
+  stealSlot: number | null,
+  src: ShellSource,
+): Action[] {
+  if (state.score[0] >= 2 || state.score[1] >= 2) {
+    throw new GameRuleError("MatchFinished");
+  }
+  if (actor !== 0 && actor !== 1) {
+    throw new GameRuleError("NotYourTurn");
+  }
+  if (actor !== state.turn) {
+    throw new GameRuleError("NotYourTurn");
+  }
+  if (!Number.isInteger(slot) || slot < 0 || slot >= cfg.max_items) {
+    throw new GameRuleError("SlotOutOfRange");
+  }
+  if (slot >= state.items[actor].length) {
+    throw new GameRuleError("SlotEmpty");
+  }
+  const [item] = state.items[actor].splice(slot, 1);
+  try {
+    return applyItem(state, cfg, actor, item, slot, stealSlot, src);
+  } catch (err) {
+    state.items[actor].splice(slot, 0, item);
+    throw err;
+  }
 }

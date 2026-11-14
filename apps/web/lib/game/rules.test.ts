@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import type { GameStateView } from "../nearTypes";
+import type { GameStateView, Item } from "../nearTypes";
 import {
   ALL_ITEMS,
   DEFAULT_GAME_CONFIG,
@@ -18,6 +18,7 @@ import {
   loadAdvance,
   loadCurrent,
   newLoad,
+  useItem,
 } from "./rules";
 import { ScriptedSource, SeededSource } from "./shellSource";
 
@@ -338,4 +339,305 @@ test("T-104: fire rejects wrong turn, empty load, and finished match", () => {
     () => fire(done, cfg, 0, "Opponent", src),
     (err: unknown) => err instanceof GameRuleError && err.code === "MatchFinished",
   );
+});
+
+function itemState(round: number, load = createEmptyLoad(1, 1), items: Item[] = []): GameStateView {
+  const st = stateForRound(round, load, DEFAULT_GAME_CONFIG);
+  st.items[0] = [...items];
+  return st;
+}
+
+test("T-105: Loupe reveals current shell privately and rejects empty load", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const st = itemState(2, createEmptyLoad(1, 1), ["Loupe"]);
+  const actions = useItem(st, cfg, 0, 0, null, new ScriptedSource(["Live"]));
+  assert.deepEqual(actions, [
+    { kind: "ItemUsed", player: 0, item: "Loupe", slot: 0, result: { kind: "Private", pos: 0, shell: "Live" } },
+  ]);
+  assert.deepEqual(st.items[0], []);
+  assert.equal(st.load.fixed[0], "Live");
+
+  const empty = itemState(2, createEmptyLoad(0, 0), ["Loupe"]);
+  assert.throws(
+    () => useItem(empty, cfg, 0, 0, null, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "NoShellsLeft",
+  );
+  assert.deepEqual(empty.items[0], ["Loupe"]);
+});
+
+test("T-105 & DECISIONS #9: Pipe heals +1, rejects at full HP or heal_cut without consuming", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const src = new ScriptedSource([]);
+  const st = itemState(2, createEmptyLoad(1, 1), ["Pipe"]);
+  st.hp = [3, 4];
+  const actions = useItem(st, cfg, 0, 0, null, src);
+  assert.deepEqual(actions, [
+    { kind: "ItemUsed", player: 0, item: "Pipe", slot: 0, result: { kind: "Healed", amount: 1 } },
+  ]);
+  assert.deepEqual(st.hp, [4, 4]);
+  assert.deepEqual(st.items[0], []);
+
+  const full = itemState(2, createEmptyLoad(1, 1), ["Pipe"]);
+  assert.throws(
+    () => useItem(full, cfg, 0, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "ItemBlocked",
+  );
+  assert.deepEqual(full.items[0], ["Pipe"]);
+
+  const cut = itemState(3, createEmptyLoad(1, 1), ["Pipe"]);
+  cut.heal_cut = [true, false];
+  cut.hp = [2, 4];
+  assert.throws(
+    () => useItem(cut, cfg, 0, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "HealBlocked",
+  );
+  assert.deepEqual(cut.items[0], ["Pipe"]);
+});
+
+test("T-105: Flask ejects shell keeping turn/saw, reloads on last shell, rejects empty", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const st = itemState(2, createEmptyLoad(1, 1), ["Flask"]);
+  st.saw_active = true;
+  const actions = useItem(st, cfg, 0, 0, null, new ScriptedSource(["Blank"]));
+  assert.deepEqual(actions, [
+    { kind: "ItemUsed", player: 0, item: "Flask", slot: 0, result: { kind: "Ejected", shell: "Blank" } },
+    { kind: "Ejected", shell: "Blank" },
+  ]);
+  assert.equal(st.turn, 0);
+  assert.equal(st.saw_active, true);
+  assert.equal(st.load.remaining, 1);
+
+  const last = itemState(2, createEmptyLoad(0, 1), ["Flask"]);
+  last.saw_active = true;
+  last.shackled = 1;
+  const aLast = useItem(last, cfg, 0, 0, null, ScriptedSource.withRolls(["Blank"], new Array(12).fill(0)));
+  assert.equal(aLast.some((a) => a.kind === "TurnSkipped" && a.player === 1), true);
+  assert.equal(aLast.some((a) => a.kind === "LoadStarted"), true);
+  assert.equal(last.saw_active, false);
+  assert.equal(last.shackled, null);
+  assert.equal(last.turn, 0);
+  assert.equal(last.load.remaining, 8);
+
+  const empty = itemState(2, createEmptyLoad(0, 0), ["Flask"]);
+  assert.throws(
+    () => useItem(empty, cfg, 0, 0, null, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "NoShellsLeft",
+  );
+  assert.deepEqual(empty.items[0], ["Flask"]);
+});
+
+test("T-105: Shackle and Hacksaw apply state and reject duplicates without consuming", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const src = new ScriptedSource([]);
+
+  const stSh = itemState(2, createEmptyLoad(1, 1), ["Shackle"]);
+  const aSh = useItem(stSh, cfg, 0, 0, null, src);
+  assert.deepEqual(aSh, [
+    { kind: "ItemUsed", player: 0, item: "Shackle", slot: 0, result: { kind: "None" } },
+  ]);
+  assert.equal(stSh.shackled, 1);
+
+  const dupSh = itemState(2, createEmptyLoad(1, 1), ["Shackle"]);
+  dupSh.shackled = 1;
+  assert.throws(
+    () => useItem(dupSh, cfg, 0, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "AlreadyShackled",
+  );
+  assert.deepEqual(dupSh.items[0], ["Shackle"]);
+
+  const brokeSh = itemState(2, createEmptyLoad(1, 1), ["Shackle"]);
+  brokeSh.shackle_broke_this_turn = true;
+  assert.throws(
+    () => useItem(brokeSh, cfg, 0, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "ShackleJustBroke",
+  );
+  assert.deepEqual(brokeSh.items[0], ["Shackle"]);
+
+  const stSaw = itemState(2, createEmptyLoad(1, 1), ["Hacksaw"]);
+  const aSaw = useItem(stSaw, cfg, 0, 0, null, src);
+  assert.deepEqual(aSaw, [
+    { kind: "ItemUsed", player: 0, item: "Hacksaw", slot: 0, result: { kind: "None" } },
+  ]);
+  assert.equal(stSaw.saw_active, true);
+
+  const dupSaw = itemState(2, createEmptyLoad(1, 1), ["Hacksaw"]);
+  dupSaw.saw_active = true;
+  assert.throws(
+    () => useItem(dupSaw, cfg, 0, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "SawAlreadyActive",
+  );
+  assert.deepEqual(dupSaw.items[0], ["Hacksaw"]);
+});
+
+test("T-105: useItem common rejections preserve slot order", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const src = new ScriptedSource([]);
+  const st = itemState(2, createEmptyLoad(1, 1), ["Loupe", "Pipe", "Flask"]);
+  st.hp[0] = st.max_hp;
+
+  assert.throws(
+    () => useItem(st, cfg, 1, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "NotYourTurn",
+  );
+  assert.throws(
+    () => useItem(st, cfg, 0, 4, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "SlotOutOfRange",
+  );
+  assert.throws(
+    () => useItem(st, cfg, 0, 3, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "SlotEmpty",
+  );
+  assert.throws(
+    () => useItem(st, cfg, 0, 1, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "ItemBlocked",
+  );
+  assert.deepEqual(st.items[0], ["Loupe", "Pipe", "Flask"]);
+
+  const done = itemState(2, createEmptyLoad(1, 1), ["Loupe"]);
+  done.score = [2, 0];
+  assert.throws(
+    () => useItem(done, cfg, 0, 0, null, src),
+    (err: unknown) => err instanceof GameRuleError && err.code === "MatchFinished",
+  );
+});
+
+test("T-106 & DECISIONS #8: Ticker reveals future shell or consumes with None when <=1 shell left", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const st = itemState(3, createEmptyLoad(1, 2), ["Ticker"]);
+  const a1 = useItem(st, cfg, 0, 0, null, ScriptedSource.withRolls(["Live"], [0]));
+  assert.deepEqual(a1, [
+    { kind: "ItemUsed", player: 0, item: "Ticker", slot: 0, result: { kind: "Private", pos: 1, shell: "Live" } },
+  ]);
+  assert.equal(st.load.fixed[1], "Live");
+  assert.deepEqual(st.items[0], []);
+
+  const stOne = itemState(3, createEmptyLoad(1, 0), ["Ticker"]);
+  const a2 = useItem(stOne, cfg, 0, 0, null, new ScriptedSource([]));
+  assert.deepEqual(a2, [
+    { kind: "ItemUsed", player: 0, item: "Ticker", slot: 0, result: { kind: "None" } },
+  ]);
+  assert.deepEqual(stOne.items[0], []);
+});
+
+test("T-106: Magnet flips current shell keeping announced counts, rejects empty load", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const st = itemState(3, createEmptyLoad(1, 1), ["Magnet"]);
+  const a = useItem(st, cfg, 0, 0, null, new ScriptedSource(["Live"]));
+  assert.deepEqual(a, [
+    { kind: "ItemUsed", player: 0, item: "Magnet", slot: 0, result: { kind: "None" } },
+  ]);
+  assert.equal(st.load.announced_live, 1);
+  assert.equal(st.load.announced_blank, 1);
+  assert.equal(st.load.live_left, 0);
+  assert.equal(st.load.blank_left, 2);
+  assert.equal(st.load.fixed[0], "Blank");
+
+  // Already-fixed shell flips without drawing.
+  const stFixed = itemState(3, createEmptyLoad(1, 1), ["Magnet"]);
+  stFixed.load.fixed[0] = "Blank";
+  useItem(stFixed, cfg, 0, 0, null, new ScriptedSource([]));
+  assert.equal(stFixed.load.fixed[0], "Live");
+  assert.equal(stFixed.load.live_left, 2);
+  assert.equal(stFixed.load.blank_left, 0);
+
+  const empty = itemState(3, createEmptyLoad(0, 0), ["Magnet"]);
+  assert.throws(
+    () => useItem(empty, cfg, 0, 0, null, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "NoShellsLeft",
+  );
+  assert.deepEqual(empty.items[0], ["Magnet"]);
+});
+
+test("T-106: Lockpick steals & applies item, cannot steal Lockpick, atomic on rejection", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+  const st = itemState(2, createEmptyLoad(1, 1), ["Lockpick"]);
+  st.items[1] = ["Pipe"];
+  st.hp = [3, 4];
+  const a = useItem(st, cfg, 0, 0, 0, new ScriptedSource([]));
+  assert.deepEqual(a, [
+    { kind: "ItemUsed", player: 0, item: "Lockpick", slot: 0, result: { kind: "None" } },
+    { kind: "ItemUsed", player: 0, item: "Pipe", slot: 0, result: { kind: "Healed", amount: 1 } },
+  ]);
+  assert.deepEqual(st.hp, [4, 4]);
+  assert.deepEqual(st.items[0], []);
+  assert.deepEqual(st.items[1], []);
+
+  // Cannot steal Lockpick
+  const noStealLockpick = itemState(3, createEmptyLoad(1, 1), ["Lockpick"]);
+  noStealLockpick.items[1] = ["Lockpick"];
+  assert.throws(
+    () => useItem(noStealLockpick, cfg, 0, 0, 0, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "ItemBlocked",
+  );
+  assert.deepEqual(noStealLockpick.items[0], ["Lockpick"]);
+  assert.deepEqual(noStealLockpick.items[1], ["Lockpick"]);
+
+  // Stolen Shackle inapplicable -> atomic rejection
+  const noStealShackle = itemState(3, createEmptyLoad(1, 1), ["Lockpick"]);
+  noStealShackle.items[1] = ["Shackle"];
+  noStealShackle.shackled = 1;
+  assert.throws(
+    () => useItem(noStealShackle, cfg, 0, 0, 0, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "AlreadyShackled",
+  );
+  assert.deepEqual(noStealShackle.items[0], ["Lockpick"]);
+  assert.deepEqual(noStealShackle.items[1], ["Shackle"]);
+
+  assert.throws(
+    () => useItem(noStealShackle, cfg, 0, 0, null, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "SlotOutOfRange",
+  );
+  assert.throws(
+    () => useItem(noStealShackle, cfg, 0, 0, 1, new ScriptedSource([])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "SlotEmpty",
+  );
+});
+
+test("T-106: Tincture 50% good/bad rolls, boundary 49/50, lethal bad roll, heal_cut rejection", () => {
+  const cfg = DEFAULT_GAME_CONFIG;
+
+  // Roll 49 -> +2 clamped to max_hp
+  const stGood = itemState(1, createEmptyLoad(1, 1), ["Tincture"]);
+  stGood.hp = [2, 4];
+  const aGood = useItem(stGood, cfg, 0, 0, null, ScriptedSource.withRolls([], [49]));
+  assert.deepEqual(aGood, [
+    { kind: "ItemUsed", player: 0, item: "Tincture", slot: 0, result: { kind: "Healed", amount: 2 } },
+  ]);
+  assert.deepEqual(stGood.hp, [4, 4]);
+
+  // Roll 50 -> -1 damage; triggers HealCut in R3
+  const stBad = itemState(3, createEmptyLoad(1, 1), ["Tincture"]);
+  stBad.hp = [3, 3];
+  const aBad = useItem(stBad, cfg, 0, 0, null, ScriptedSource.withRolls([], [50]));
+  assert.deepEqual(aBad, [
+    { kind: "ItemUsed", player: 0, item: "Tincture", slot: 0, result: { kind: "Damaged", amount: 1 } },
+    { kind: "HealCut", player: 0 },
+  ]);
+  assert.deepEqual(stBad.hp, [2, 3]);
+  assert.deepEqual(stBad.heal_cut, [true, false]);
+
+  // Lethal roll at high slot
+  const stKill = itemState(1, createEmptyLoad(1, 1), ["Loupe", "Pipe", "Flask", "Tincture"]);
+  stKill.hp = [1, 4];
+  const aKill = useItem(
+    stKill,
+    cfg,
+    0,
+    3,
+    null,
+    ScriptedSource.withRolls([], [99, 0, 0, 1, 2, 3, 4, 0, 1, 2]),
+  );
+  assert.deepEqual(aKill[1], { kind: "RoundEnded", winner: 1, score: [0, 1] });
+  assert.equal(stKill.round, 2);
+  assert.equal(stKill.items[0].length, 4);
+  assert.equal(stKill.items[1].length, 4);
+
+  // Blocked under heal_cut
+  const stCut = itemState(3, createEmptyLoad(1, 1), ["Tincture"]);
+  stCut.heal_cut = [true, false];
+  assert.throws(
+    () => useItem(stCut, cfg, 0, 0, null, ScriptedSource.withRolls([], [0])),
+    (err: unknown) => err instanceof GameRuleError && err.code === "HealBlocked",
+  );
+  assert.deepEqual(stCut.items[0], ["Tincture"]);
 });
