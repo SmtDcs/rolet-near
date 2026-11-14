@@ -26,6 +26,9 @@ pub const LOG_CAP: usize = 32;
 /// için >2× güvenlik payı olarak 10 Tgas seçilmiştir.
 pub const MIN_ACTION_GAS: Gas = Gas::from_tgas(10);
 
+/// S-15: son saniye `fire`/`claim_timeout` yarışını önlemek için Active timeout ek süresi (ms).
+pub const TIMEOUT_GRACE_MS: u64 = 2_000;
+
 /// Maç durumu (DESIGN §4.5). `Pending → Revealing → Active → Finished`, hatalı
 /// veya terk edilenler `Cancelled`.
 #[derive(
@@ -596,7 +599,10 @@ impl Contract {
             Status::Active => {
                 let by = caller_idx as u8;
                 require!(by != m.game.turn, "cannot claim timeout on your own turn");
-                require!(now >= m.deadline_ms, "turn timeout not reached");
+                require!(
+                    now >= m.deadline_ms.saturating_add(TIMEOUT_GRACE_MS),
+                    "turn timeout not reached"
+                );
                 let timeout_action = Action::TimeoutClaimed { by };
                 let end_action = Action::MatchEnded {
                     winner: by,
@@ -1359,7 +1365,7 @@ mod tests {
         c.claim_timeout(U64(7));
     }
 
-    /// T-113 bitti kuralı: süre dolmadan Active timeout red.
+    /// T-113 bitti kuralı + S-15: süre + grace dolmadan Active timeout red.
     #[test]
     #[should_panic(expected = "turn timeout not reached")]
     fn active_timeout_rejected_before_deadline() {
@@ -1367,8 +1373,22 @@ mod tests {
         let turn = c.match_or_panic(7).game.turn as usize;
         let waiting = c.match_or_panic(7).players[1 - turn].to_string();
         let deadline = c.match_or_panic(7).deadline_ms;
-        switch_at(&waiting, NearToken::ZERO, deadline - 1);
+        switch_at(&waiting, NearToken::ZERO, deadline + TIMEOUT_GRACE_MS - 1);
         c.claim_timeout(U64(7));
+    }
+
+    /// FIX-15 (S-15): `deadline_ms..deadline_ms + TIMEOUT_GRACE_MS` ek süresi içinde
+    /// sıradaki oyuncunun `fire` hamlesi yine kabul edilir.
+    #[test]
+    fn fire_succeeds_during_grace_window() {
+        let mut c = setup_active();
+        let m = c.match_or_panic(7);
+        let turn_acc = m.players[m.game.turn as usize].to_string();
+        switch_at(&turn_acc, NearToken::ZERO, m.deadline_ms + TIMEOUT_GRACE_MS - 1);
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let actions = c.fire_with(U64(7), Target::Opponent, &mut src);
+        assert!(actions.iter().any(|a| matches!(a, Action::Shot { .. })));
+        c.assert_solvent();
     }
 
     /// T-113 bitti kuralı: reveal aşaması timeout → açan taraf durability
@@ -1438,7 +1458,7 @@ mod tests {
         let waiting_idx = 1 - m.game.turn as usize;
         let waiting_acc = m.players[waiting_idx].clone();
 
-        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms + TIMEOUT_GRACE_MS);
         let actions = c.claim_timeout(U64(7));
         assert_eq!(
             actions,
@@ -1483,16 +1503,16 @@ mod tests {
         let waiting_idx = 1 - m.game.turn as usize;
         let waiting_acc = m.players[waiting_idx].clone();
 
-        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms + TIMEOUT_GRACE_MS);
         c.claim_timeout(U64(7));
         let refund_after_prune = c.treasury;
         assert_eq!(c.player_state(&waiting_acc).owed, NearToken::from_millinear(100));
         assert!(get_created_receipts().is_empty());
 
         // Fonlama sonrası çekilebilir.
-        switch_at("donor.testnet", NearToken::from_millinear(150), m.deadline_ms + 1);
+        switch_at("donor.testnet", NearToken::from_millinear(150), m.deadline_ms + TIMEOUT_GRACE_MS + 1);
         c.fund_treasury();
-        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms + 2);
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms + TIMEOUT_GRACE_MS + 2);
         let claimed = c.claim_reward();
         assert_eq!(claimed, NearToken::from_millinear(100));
         assert_eq!(c.player_state(&waiting_acc).owed, NearToken::ZERO);
@@ -1523,7 +1543,7 @@ mod tests {
         c.treasury = NearToken::ZERO;
         let m = c.match_or_panic(7);
         let waiting_acc = m.players[1 - m.game.turn as usize].clone();
-        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms + TIMEOUT_GRACE_MS);
         c.claim_timeout(U64(7));
         // `finish_match` budama iadesini treasury'ye yazdığından tam boş durumu kur.
         c.treasury = NearToken::ZERO;
@@ -1854,7 +1874,7 @@ mod tests {
 
         // Maç timeout ile bitsin → ödül 100 mNEAR (snapshot), 10 mNEAR değil.
         let non_turn = after_r1.players[1 - after_r1.game.turn as usize].to_string();
-        switch_at(&non_turn, NearToken::ZERO, after_r1.deadline_ms);
+        switch_at(&non_turn, NearToken::ZERO, after_r1.deadline_ms + TIMEOUT_GRACE_MS);
         let actions = c.claim_timeout(U64(7));
         assert!(actions.contains(&Action::MatchEnded {
             winner: 1 - after_r1.game.turn,

@@ -100,11 +100,6 @@ impl Contract {
         }
     }
 
-    /// Yalnız owner'ın çağırabildiği metodların ortak bekçisi.
-    pub fn assert_owner(&self) {
-        near_sdk::require!(env::predecessor_account_id() == self.owner, "owner only");
-    }
-
     pub fn set_config(&mut self, config: Config) {
         self.assert_owner();
         config.validate();
@@ -123,6 +118,11 @@ impl Contract {
 }
 
 impl Contract {
+    /// Yalnız owner'ın çağırabildiği metodların ortak bekçisi (ABI dışı, S-13).
+    pub(crate) fn assert_owner(&self) {
+        near_sdk::require!(env::predecessor_account_id() == self.owner, "owner only");
+    }
+
     /// Kontratın depolama kilidi dışındaki serbest bakiyesi (S-02).
     pub(crate) fn free_balance(&self) -> NearToken {
         let stake = NearToken::from_yoctonear(
