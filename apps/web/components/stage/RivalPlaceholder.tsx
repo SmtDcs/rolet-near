@@ -18,7 +18,7 @@ const CHARACTER_ACCENTS: Record<
     coat: "#1b1917",
     brass: "#c6a15b",
     visor: "#d9b770",
-    tag: "KULECİ",
+    tag: "KULECI",
   },
   Ayarci: {
     coat: "#161b1d",
@@ -30,7 +30,7 @@ const CHARACTER_ACCENTS: Record<
     coat: "#1e1617",
     brass: "#b67a4e",
     visor: "#d89260",
-    tag: "KAÇAK",
+    tag: "KACAK",
   },
 };
 
