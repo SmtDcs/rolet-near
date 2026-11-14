@@ -636,12 +636,13 @@ mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken};
 
-    /// signer == predecessor: function-call key akışını taklit eder.
+    /// signer == predecessor: function-call key akışını taklit eder (depolamayı korur).
     fn switch(account: &str, attached: NearToken) {
         let ctx = VMContextBuilder::new()
             .signer_account_id(account.parse().unwrap())
             .predecessor_account_id(account.parse().unwrap())
             .attached_deposit(attached)
+            .storage_usage(env::storage_usage())
             .build();
         near_sdk::testing_env!(ctx);
     }
@@ -650,6 +651,15 @@ mod tests {
         let ctx = VMContextBuilder::new()
             .signer_account_id("owner.testnet".parse().unwrap())
             .predecessor_account_id("owner.testnet".parse().unwrap())
+            .build();
+        near_sdk::testing_env!(ctx);
+    }
+
+    fn owner_ctx_at(ts_ms: u64) {
+        let ctx = VMContextBuilder::new()
+            .signer_account_id("owner.testnet".parse().unwrap())
+            .predecessor_account_id("owner.testnet".parse().unwrap())
+            .block_timestamp(ts_ms * 1_000_000)
             .build();
         near_sdk::testing_env!(ctx);
     }
@@ -827,17 +837,20 @@ mod tests {
         c.join(U64(8), "carol.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
     }
 
-    /// T-110 + FIX-05: cancel iade eder (durability + kilit + active_match),
-    /// maçı siler ve depolamayı başlangıca döndürür.
+    /// T-110 + FIX-05 + FIX-03-R: cancel iade eder (durability + kilit + active_match),
+    /// maçı siler, depolamayı ve treasury'yi başlangıca döndürür.
     #[test]
     fn cancel_refunds_and_unlocks() {
         let mut c = setup();
         let storage_before = env::storage_usage();
+        let treasury_before = c.treasury;
         c.join(U64(7), "bob.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
         assert!(env::storage_usage() > storage_before);
+        assert!(c.treasury < treasury_before);
         c.cancel(U64(7));
         assert!(c.get_match(U64(7), None).is_none());
         assert_eq!(env::storage_usage(), storage_before);
+        assert_eq!(c.treasury, treasury_before);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 10);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
         assert_eq!(c.player_state(&"alice.testnet".parse::<AccountId>().unwrap()).active_match, None);
@@ -1053,13 +1066,14 @@ mod tests {
             .predecessor_account_id(account.parse().unwrap())
             .attached_deposit(attached)
             .block_timestamp(ts_ms * 1_000_000)
+            .storage_usage(env::storage_usage())
             .build();
         near_sdk::testing_env!(ctx);
     }
 
     /// Revealing'i tamamlayıp Active maç döndürür (başlangıç zamanı `ts_ms = 1_000`).
     fn setup_active() -> Contract {
-        switch_at("owner.testnet", NearToken::ZERO, 1_000);
+        owner_ctx_at(1_000);
         let mut c = Contract::new("owner.testnet".parse().unwrap(), Config::default());
         c.treasury = NearToken::from_near(10);
         for (who, kind) in [("alice.testnet", Kind::Kuleci), ("bob.testnet", Kind::Ayarci)] {
@@ -1089,6 +1103,7 @@ mod tests {
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
         c.save_match(&m);
+        let storage_before = env::storage_usage();
 
         // Fişek sırası:
         // R1: Live (A->B), Blank (B->B), Blank (B->A), Live (A->B, R1 biter)
@@ -1158,7 +1173,18 @@ mod tests {
         assert_eq!(m.status, Status::Finished);
         assert_eq!(m.winner, Some(0));
         assert_eq!(m.deadline_ms, 0);
-        assert!(c.treasury <= treasury_before.saturating_sub(NearToken::from_millinear(100)));
+        let storage_after = env::storage_usage();
+        let byte_cost = env::storage_byte_cost().as_yoctonear();
+        let expected_treasury = if storage_after >= storage_before {
+            treasury_before
+                .saturating_sub(NearToken::from_yoctonear((storage_after - storage_before) as u128 * byte_cost))
+                .saturating_sub(NearToken::from_millinear(100))
+        } else {
+            treasury_before
+                .saturating_add(NearToken::from_yoctonear((storage_before - storage_after) as u128 * byte_cost))
+                .saturating_sub(NearToken::from_millinear(100))
+        };
+        assert_eq!(c.treasury, expected_treasury);
         c.assert_solvent();
 
         let alice_st = c.player_state(&"alice.testnet".parse().unwrap());
@@ -1197,12 +1223,15 @@ mod tests {
         m.game.turn = 0;
         c.save_match(&m);
 
+        let storage_before = env::storage_usage();
         let mut src = ScriptedSource::new(vec![Shell::Live]);
         switch_at("alice.testnet", NearToken::ZERO, 2_000);
         c.fire_with(U64(7), Target::Opponent, &mut src);
+        let freed = storage_before.saturating_sub(env::storage_usage()) as u128;
+        let refund = NearToken::from_yoctonear(freed * env::storage_byte_cost().as_yoctonear());
 
         assert_eq!(c.match_or_panic(7).status, Status::Finished);
-        assert_eq!(c.treasury, NearToken::from_millinear(50));
+        assert_eq!(c.treasury, NearToken::from_millinear(50).saturating_add(refund));
         assert!(get_created_receipts().is_empty());
         let alice_st = c.player_state(&"alice.testnet".parse().unwrap());
         assert_eq!(alice_st.wins, 1);
@@ -1295,7 +1324,7 @@ mod tests {
 
     /// Revealing aşamasında t = 1_000'de kurulmuş maç (`reveal_deadline_ms = 61_000`).
     fn setup_revealing_at_1000() -> Contract {
-        switch_at("owner.testnet", NearToken::ZERO, 1_000);
+        owner_ctx_at(1_000);
         let mut c = Contract::new("owner.testnet".parse().unwrap(), Config::default());
         c.treasury = NearToken::from_near(10);
         for (who, kind) in [("alice.testnet", Kind::Kuleci), ("bob.testnet", Kind::Ayarci)] {
@@ -1394,6 +1423,7 @@ mod tests {
     fn active_timeout_awards_caller_and_pays_reward() {
         let mut c = setup_active();
         let treasury_before = c.treasury;
+        let storage_before = env::storage_usage();
         let m = c.match_or_panic(7);
         let waiting_idx = 1 - m.game.turn as usize;
         let waiting_acc = m.players[waiting_idx].clone();
@@ -1411,10 +1441,17 @@ mod tests {
             ]
         );
 
+        let freed = storage_before.saturating_sub(env::storage_usage()) as u128;
+        let refund = NearToken::from_yoctonear(freed * env::storage_byte_cost().as_yoctonear());
         let m_after = c.match_or_panic(7);
         assert_eq!(m_after.status, Status::Finished);
         assert_eq!(m_after.winner, Some(waiting_idx as u8));
-        assert_eq!(c.treasury, treasury_before.saturating_sub(NearToken::from_millinear(100)));
+        assert_eq!(
+            c.treasury,
+            treasury_before
+                .saturating_add(refund)
+                .saturating_sub(NearToken::from_millinear(100))
+        );
         assert_eq!(c.player_state(&waiting_acc).wins, 1);
         assert_eq!(c.player_state(&m.players[m.game.turn as usize]).losses, 1);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
@@ -1438,6 +1475,7 @@ mod tests {
 
         switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
         c.claim_timeout(U64(7));
+        let refund_after_prune = c.treasury;
         assert_eq!(c.player_state(&waiting_acc).owed, NearToken::from_millinear(100));
         assert!(get_created_receipts().is_empty());
 
@@ -1448,7 +1486,7 @@ mod tests {
         let claimed = c.claim_reward();
         assert_eq!(claimed, NearToken::from_millinear(100));
         assert_eq!(c.player_state(&waiting_acc).owed, NearToken::ZERO);
-        assert_eq!(c.treasury, NearToken::from_millinear(50));
+        assert_eq!(c.treasury, NearToken::from_millinear(50).saturating_add(refund_after_prune));
 
         let receipts = get_created_receipts();
         assert_eq!(receipts.len(), 1);
@@ -1477,6 +1515,8 @@ mod tests {
         let waiting_acc = m.players[1 - m.game.turn as usize].clone();
         switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
         c.claim_timeout(U64(7));
+        // `finish_match` budama iadesini treasury'ye yazdığından tam boş durumu kur.
+        c.treasury = NearToken::ZERO;
         c.claim_reward();
     }
 
@@ -1563,6 +1603,40 @@ mod tests {
         c.reveal(U64(7), secret_of(2));
         switch("alice.testnet", NearToken::ZERO);
         c.reveal(U64(7), secret_of(1));
+        c.assert_solvent();
+    }
+
+    /// FIX-03-R: `join -> cancel` ve `reveal-timeout` sonrası `treasury` ve
+    /// `storage_usage` başlangıç değerine döner; tekrarlanan iptaller treasury'yi eritmez.
+    #[test]
+    fn fix03r_join_cancel_and_reveal_timeout_restore_treasury() {
+        let mut c = setup();
+        let s0 = env::storage_usage();
+        let t0 = c.treasury;
+
+        // 3 kez join -> cancel döngüsü treasury ve depolamayı net sıfırda tutar.
+        for i in 1..=3u64 {
+            c.join(U64(i), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", i), alice_token(&c));
+            assert!(c.treasury < t0);
+            c.cancel(U64(i));
+            assert_eq!(env::storage_usage(), s0);
+            assert_eq!(c.treasury, t0);
+            c.assert_solvent();
+        }
+
+        // Revealing -> tek reveal -> reveal-timeout da depolama ve treasury'yi geri yükler.
+        switch_at("alice.testnet", NearToken::ZERO, 1_000);
+        c.join(U64(77), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", 77), alice_token(&c));
+        switch_at("bob.testnet", NearToken::ZERO, 1_000);
+        c.join(U64(77), "alice.testnet".parse().unwrap(), real_commit(2, "bob.testnet", 77), bob_token(&c));
+        switch_at("alice.testnet", NearToken::ZERO, 1_000);
+        c.reveal(U64(77), secret_of(1));
+        assert!(c.treasury < t0);
+
+        switch_at("alice.testnet", NearToken::ZERO, 61_000);
+        c.claim_timeout(U64(77));
+        assert_eq!(env::storage_usage(), s0);
+        assert_eq!(c.treasury, t0);
         c.assert_solvent();
     }
 
@@ -1749,6 +1823,7 @@ mod tests {
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
         c.save_match(&m);
+        let storage_before = env::storage_usage();
 
         let mut src = ScriptedSource::new(vec![
             Shell::Live,
@@ -1775,7 +1850,18 @@ mod tests {
             winner: 1 - after_r1.game.turn,
             reward: NearToken::from_millinear(100).as_yoctonear().into(),
         }));
-        assert!(treasury_before.saturating_sub(c.treasury) >= NearToken::from_millinear(100));
+        let storage_after = env::storage_usage();
+        let byte_cost = env::storage_byte_cost().as_yoctonear();
+        let expected_treasury = if storage_after >= storage_before {
+            treasury_before
+                .saturating_sub(NearToken::from_yoctonear((storage_after - storage_before) as u128 * byte_cost))
+                .saturating_sub(NearToken::from_millinear(100))
+        } else {
+            treasury_before
+                .saturating_add(NearToken::from_yoctonear((storage_before - storage_after) as u128 * byte_cost))
+                .saturating_sub(NearToken::from_millinear(100))
+        };
+        assert_eq!(c.treasury, expected_treasury);
         c.assert_solvent();
     }
 }

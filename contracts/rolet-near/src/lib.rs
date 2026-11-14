@@ -127,13 +127,18 @@ impl Contract {
         env::account_balance().saturating_sub(stake)
     }
 
-    /// İşlem sırasında artan depolama maliyetini `treasury`'den düşer (S-02).
+    /// İşlem sırasında artan depolama maliyetini `treasury`'den düşer,
+    /// azalan depolama bedelini `treasury`'ye geri ekler (S-02, FIX-03-R).
     pub(crate) fn settle_storage(&mut self, storage_before: u64) {
         let storage_after = env::storage_usage();
         if storage_after > storage_before {
             let delta = (storage_after - storage_before) as u128;
             let cost = NearToken::from_yoctonear(delta * env::storage_byte_cost().as_yoctonear());
             self.treasury = self.treasury.saturating_sub(cost);
+        } else if storage_after < storage_before {
+            let freed = (storage_before - storage_after) as u128;
+            let refund = NearToken::from_yoctonear(freed * env::storage_byte_cost().as_yoctonear());
+            self.treasury = self.treasury.saturating_add(refund);
         }
     }
 

@@ -85,6 +85,7 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
     let secret_b = [0x22u8; 32];
     let commit_a = compute_commitment(secret_a, alice.id().as_str(), match_id);
     let commit_b = compute_commitment(secret_b, bob.id().as_str(), match_id);
+    let treasury_before_match: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
 
     // join ×2
     alice
@@ -138,10 +139,9 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
         .expect("maç mevcut olmalı");
     assert_eq!(m_active.status, Status::Active);
 
-    // Hamle döngüsünden önce bakiyeleri ve treasury'yi kaydet.
+    // Hamle döngüsünden önce bakiyeleri kaydet.
     let alice_bal_before = alice.view_account().await?.balance;
     let bob_bal_before = bob.view_account().await?.balance;
-    let treasury_before: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
 
     // Döngü: sıra kimdeyse `fire(Opponent)` ile maçı bitir.
     let mut turns = 0u32;
@@ -178,17 +178,18 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
     let bob_bal_after = bob.view_account().await?.balance;
     let treasury_after: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
 
-    // Ödül (0.1 NEAR = 100 mNEAR) + maç içi depolama artışı treasury'den düşer;
+    // Ödül (0.1 NEAR = 100 mNEAR) + kalıcı maç özeti depolaması treasury'den düşer;
+    // geçici active_keys/log/fixed budaması iade edilir (FIX-03-R);
     // kazanan bakiyesi ödülle artar (gaz düşüldükten sonra net +80 mNEAR üzeri).
     let expected_reward = near_sdk::NearToken::from_millinear(100);
     assert!(
-        treasury_after <= treasury_before.saturating_sub(expected_reward),
-        "treasury_after ({treasury_after}) <= treasury_before - reward ({}) olmalı",
-        treasury_before.saturating_sub(expected_reward)
+        treasury_after <= treasury_before_match.saturating_sub(expected_reward),
+        "treasury_after ({treasury_after}) <= treasury_before_match - reward ({}) olmalı",
+        treasury_before_match.saturating_sub(expected_reward)
     );
     assert!(
-        treasury_after >= treasury_before.saturating_sub(expected_reward.saturating_add(near_sdk::NearToken::from_millinear(50))),
-        "depolama kesintisi makul aralıkta olmalı: before={treasury_before}, after={treasury_after}"
+        treasury_after >= treasury_before_match.saturating_sub(expected_reward.saturating_add(near_sdk::NearToken::from_millinear(50))),
+        "depolama kesintisi makul aralıkta olmalı: before={treasury_before_match}, after={treasury_after}"
     );
 
     let (winner_before, winner_after, winner_account) = if winner_idx == 0 {
