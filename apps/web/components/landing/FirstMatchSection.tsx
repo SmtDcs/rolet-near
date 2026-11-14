@@ -8,23 +8,23 @@ import Link from "next/link";
 const STEPS = [
   {
     index: "01",
-    title: "Connect devnet",
-    body: "Point your wallet at Solana devnet. Nothing here spends real SOL.",
+    title: "Connect NEAR Testnet",
+    body: "Sign in with MyNearWallet or Meteor on NEAR testnet. Nothing here spends mainnet funds.",
   },
   {
     index: "02",
     title: "Take a character",
-    body: "One Metaplex Core asset. Free on devnet, 0.1 SOL at launch. Good for ten matches, one burned per lobby.",
+    body: "One NEP-171 character NFT (1 NEAR on testnet). Good for ten matches, one durability burned per duel.",
   },
   {
     index: "03",
     title: "Find a bench",
-    body: "Open the duel and ask for a match. Whoever queues first hosts the table.",
+    body: "Open the duel and sign a queue session. Both players join and reveal symmetrically on-chain.",
   },
   {
     index: "04",
     title: "Approve once",
-    body: "One prompt opens a session. Reveals, turns and settlement run without asking again.",
+    body: "One prompt adds a scoped game access key. Reveals, turns, and claims run without wallet popups.",
   },
 ];
 

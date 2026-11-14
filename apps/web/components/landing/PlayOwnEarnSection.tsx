@@ -2,17 +2,17 @@ const ROWS = [
   {
     index: "01",
     title: "Play",
-    body: "One wallet prompt opens a session. Every turn after that is signed by that session key, and the turns themselves run on an ephemeral rollup.",
+    body: "One wallet prompt registers a scoped Function Call access key. Every turn after that is signed directly on NEAR with sub-second confirmation.",
   },
   {
     index: "02",
     title: "Own",
-    body: "Your character is a Metaplex Core asset with ten matches of durability. It is yours to keep, trade or retire. The program never holds it for you.",
+    body: "Your character is a NEP-171 NFT with ten matches of durability. It is yours to keep, trade, or retire. The contract never custodies it outside a live match.",
   },
   {
     index: "03",
     title: "Earn",
-    body: "Win and the treasury pays a fixed 0.02 SOL. No token is printed, nothing is farmed into existence, and the reward does not decay with supply.",
+    body: "Win and the treasury credits a fixed 0.10 NEAR reward you claim directly to your wallet. Nothing is printed or inflated.",
   },
 ] as const;
 

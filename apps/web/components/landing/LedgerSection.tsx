@@ -4,11 +4,17 @@ import { useEffect, useState } from "react";
 
 type Stats = {
   characters: number | null;
-  lobbies: number | null;
-  treasurySol: number | null;
+  matches: number | null;
+  treasuryNear: number | null;
+  rewardNear?: number | null;
 };
 
-const FALLBACK: Stats = { characters: null, lobbies: null, treasurySol: null };
+const FALLBACK: Stats = {
+  characters: null,
+  matches: null,
+  treasuryNear: null,
+  rewardNear: 0.1,
+};
 
 function Value({ value }: { value: string | null }) {
   if (value === null) return <span className="text-[var(--color-phosphor-faint)]">--</span>;
@@ -35,21 +41,24 @@ export function LedgerSection() {
     {
       label: "Characters minted",
       value: stats.characters === null ? null : stats.characters.toLocaleString("en-US"),
-      note: "Metaplex Core assets on devnet",
+      note: "NEP-171 character NFTs on NEAR",
     },
     {
-      label: "Benches opened",
-      value: stats.lobbies === null ? null : stats.lobbies.toLocaleString("en-US"),
-      note: "Lobby accounts on chain",
+      label: "Matches settled",
+      value: stats.matches === null ? null : stats.matches.toLocaleString("en-US"),
+      note: "Recorded on NEAR contract",
     },
     {
       label: "Treasury",
-      value: stats.treasurySol === null ? null : `${stats.treasurySol.toFixed(3)} SOL`,
-      note: "Program-owned reward pool",
+      value: stats.treasuryNear === null ? null : `${stats.treasuryNear.toFixed(3)} NEAR`,
+      note: "Contract-held reward pool",
     },
     {
       label: "Reward per match",
-      value: "0.02 SOL",
+      value:
+        stats.rewardNear !== null && stats.rewardNear !== undefined
+          ? `${stats.rewardNear.toFixed(2)} NEAR`
+          : "0.10 NEAR",
       note: "Fixed, paid from the treasury",
     },
   ];
@@ -61,9 +70,9 @@ export function LedgerSection() {
           <p className="label">Read from the chain, not from a dashboard</p>
           <h2 className="macro-sm mt-3">What ROLET is</h2>
           <p className="mt-4 max-w-2xl font-sans text-[0.95rem] leading-relaxed text-[var(--color-phosphor-dim)]">
-            Two players, one revolver, eight chambers. The match lives on Solana and
-            its turns run on an ephemeral rollup. Nothing here is simulated: the
-            counters below are read from the program account.
+            Two players, one revolver, eight chambers. Every commit, reveal, shot, and
+            payout lives in the NEAR smart contract. Nothing here is simulated: the
+            counters below are read straight from on-chain views.
           </p>
         </div>
 

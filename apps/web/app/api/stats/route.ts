@@ -1,51 +1,101 @@
 import { NextResponse } from "next/server";
-import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
-
-/**
- * Live counters for the landing ledger. Read straight from devnet so the
- * numbers are the chain's, not a marketing claim. Cached for a minute.
- */
-const UPSTREAM = process.env.RPCFAST_BACKEND_URL ?? "https://api.devnet.solana.com";
-const PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_ROLET_PROGRAM_ID ??
-    "mspQcUFhmAGYUsnBbcUndhaZiris53KtwYCjDHU91oH"
-);
-
-const PROFILE_SIZE = 190;
-const LOBBY_SIZE = 221;
+import { encodeArgsBase64, decodeViewResult, createNearViewClient } from "@/lib/nearViews";
+import { readNearConfig } from "@/lib/nearConfig";
 
 export const revalidate = 60;
 
-export async function GET() {
+function yoctoToNearNumber(yocto: string): number {
   try {
-    const conn = new Connection(UPSTREAM, "confirmed");
-    const vault = PublicKey.findProgramAddressSync([Buffer.from("vault")], PROGRAM_ID)[0];
-    const treasury = PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury-sol"), vault.toBuffer()],
-      PROGRAM_ID
-    )[0];
+    const val = BigInt(yocto || "0");
+    const milli = val / BigInt("1000000000000000000000");
+    return Number(milli) / 1000;
+  } catch {
+    return 0;
+  }
+}
 
-    // dataSlice of length 0 keeps the response to keys only.
-    const slice = { dataSlice: { offset: 0, length: 0 } };
-    const [profiles, lobbies, treasuryLamports] = await Promise.all([
-      conn.getProgramAccounts(PROGRAM_ID, { filters: [{ dataSize: PROFILE_SIZE }], ...slice }),
-      conn.getProgramAccounts(PROGRAM_ID, { filters: [{ dataSize: LOBBY_SIZE }], ...slice }),
-      conn.getBalance(treasury),
+export async function GET() {
+  const cfg = readNearConfig();
+  if (!cfg.contractId || !cfg.rpcUrl) {
+    return NextResponse.json(
+      {
+        characters: null,
+        matches: null,
+        treasuryNear: null,
+        rewardNear: 0.1,
+        source: "unconfigured",
+      },
+      { status: 200 },
+    );
+  }
+
+  try {
+    const views = createNearViewClient({
+      contractId: cfg.contractId,
+      rpcUrl: cfg.rpcUrl,
+    });
+
+    const supplyRes = await fetch(cfg.rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "stats:nft_total_supply",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "optimistic",
+          account_id: cfg.contractId,
+          method_name: "nft_total_supply",
+          args_base64: encodeArgsBase64({}),
+        },
+      }),
+    });
+
+    let characters: number | null = null;
+    if (supplyRes.ok) {
+      const json = (await supplyRes.json()) as {
+        result?: { result?: number[] };
+      };
+      if (Array.isArray(json.result?.result)) {
+        const rawSupply = decodeViewResult<string>(json.result.result);
+        const n = Number(rawSupply);
+        if (Number.isFinite(n)) characters = n;
+      }
+    }
+
+    const [treasuryYocto, contractCfg, lb] = await Promise.all([
+      views.getTreasury(),
+      views.getConfig(),
+      views.leaderboard(0, 100),
     ]);
+
+    const totalPlayed = lb.reduce((acc, row) => acc + row.played, 0);
 
     return NextResponse.json(
       {
-        characters: profiles.length,
-        lobbies: lobbies.length,
-        treasurySol: Number((treasuryLamports / LAMPORTS_PER_SOL).toFixed(4)),
-        source: "devnet",
+        characters,
+        matches: Math.floor(totalPlayed / 2),
+        treasuryNear: yoctoToNearNumber(treasuryYocto),
+        rewardNear: yoctoToNearNumber(contractCfg.reward),
+        source: cfg.networkId,
       },
-      { headers: { "cache-control": "public, s-maxage=60, stale-while-revalidate=300" } }
+      {
+        headers: {
+          "cache-control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
+      },
     );
   } catch {
     return NextResponse.json(
-      { characters: null, lobbies: null, treasurySol: null, source: "unavailable" },
-      { status: 200 }
+      {
+        characters: null,
+        matches: null,
+        treasuryNear: null,
+        rewardNear: 0.1,
+        source: "unavailable",
+      },
+      { status: 200 },
     );
   }
 }

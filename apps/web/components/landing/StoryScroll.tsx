@@ -15,8 +15,8 @@ const BEATS = [
     id: "bench",
     n: "01",
     title: "The bench",
-    line: "Two players. One bench. The match lives on Solana.",
-    note: "Lobby, reveal, chambers, cards, payout. A server never holds the state.",
+    line: "Two players. One bench. The match lives on NEAR.",
+    note: "Queue, commit-reveal, chambers, items, payout. A server never holds the state.",
   },
   {
     id: "load",
@@ -44,7 +44,7 @@ const BEATS = [
     n: "05",
     title: "The prize",
     line: "Sitting down burns one point of durability.",
-    note: "The winner is paid a fixed amount of SOL from the treasury. Four lives. First to zero loses.",
+    note: "The winner claims a fixed amount of NEAR from the treasury. Four lives. Best of three rounds.",
   },
 ] as const;
 
@@ -127,7 +127,7 @@ function BenchFigure() {
         <Seat name="Them" />
       </div>
       <div className="border px-3 py-3 sm:px-4" style={{ borderColor: C.brass, background: C.gunmetal }}>
-        <Kicker>One match, on Solana</Kicker>
+        <Kicker>One match, on NEAR</Kicker>
         <ol className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1" aria-label="Match steps">
           {steps.map((step, i) => (
             <li key={step} className="inline-flex items-center gap-2">
@@ -343,7 +343,7 @@ function PrizeFigure() {
         <li
           className="flex flex-wrap items-center justify-between gap-3 border px-3 py-3"
           style={{ borderColor: C.graphite }}
-          aria-label="When you win, the treasury pays a fixed amount of SOL."
+          aria-label="When you win, the treasury credits a fixed amount of NEAR."
         >
           <Kicker>You win</Kicker>
           <span className="inline-flex flex-wrap items-center gap-2">
@@ -357,7 +357,7 @@ function PrizeFigure() {
               →
             </span>
             <span className="border px-2 py-1 text-sm" style={{ borderColor: C.bone, color: C.bone, fontFamily: F.mono }}>
-              SOL
+              NEAR
             </span>
             <span className="text-sm" style={{ fontFamily: F.sans, color: C.worn }}>
               fixed amount

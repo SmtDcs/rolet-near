@@ -9,7 +9,7 @@ export function LandingFooter() {
         style={{ fontFamily: F.mono, color: C.worn }}
       >
         <span>
-          <span style={{ color: C.bone }}>ROLET</span> · Solana · workshop
+          <span style={{ color: C.bone }}>ROLET</span> · NEAR · workshop
         </span>
         <nav className="flex flex-wrap gap-5">
           <a href="#ledger" className="hover:underline">Ledger</a>

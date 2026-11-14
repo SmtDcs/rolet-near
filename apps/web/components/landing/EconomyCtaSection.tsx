@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 const LINES = [
-  { label: "Character", value: "Free on devnet", note: "Ten matches of durability. Burns one per match." },
-  { label: "Match reward", value: "0.02 SOL", note: "Paid from the treasury to the winner." },
+  { label: "Character", value: "1 NEAR (Testnet)", note: "Ten matches of durability. Burns one per duel." },
+  { label: "Match reward", value: "0.10 NEAR", note: "Credited from the treasury and claimed to your wallet." },
   { label: "Purchase split", value: "5 / 95", note: "Five to operations, ninety-five to the reward pool." },
 ];
 
@@ -11,7 +11,7 @@ export function EconomyCtaSection() {
     <section id="economy" className="grid-field grain-field scroll-mt-14 border-t border-[var(--color-line)] bg-[var(--color-surface)]">
       <div className="mx-auto w-full max-w-6xl px-6 py-20">
         <div className="frame" data-frame="THE VAULT">
-          <p className="label">A closed loop, in SOL</p>
+          <p className="label">A closed loop, in NEAR</p>
           <h2 className="macro-sm mt-3">Nothing here is printed</h2>
           <p className="mt-4 max-w-2xl font-sans text-[0.95rem] leading-relaxed text-[var(--color-phosphor-dim)]">
             Buying a character funds the pool that pays winners. Durability burns
