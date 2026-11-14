@@ -52,6 +52,22 @@ test("classifyError classifies allowance, nonce, rateLimit, missingKey, methodDe
   assert.equal(classifyError(loadFixture("allowance-error.json")), "allowance");
   assert.equal(classifyError(loadFixture("invalid-nonce.json")), "nonce");
   assert.equal(classifyError(loadFixture("http-429.json")), "rateLimit");
+  assert.equal(classifyError(loadFixture("provider-429-empty.json")), "rateLimit");
+  assert.equal(classifyError(loadFixture("provider-429-slow-down.json")), "rateLimit");
+  assert.equal(classifyError(new Error("", { cause: 429 })), "rateLimit");
+  assert.equal(classifyError(new Error("Slow down", { cause: 429 })), "rateLimit");
+  assert.equal(
+    classifyError(Object.assign(new Error('{"error":"limit"}', { cause: 429 }), { cause: 429 })),
+    "rateLimit",
+  );
+  assert.equal(
+    classifyError(Object.assign(new Error("Internal server error", { cause: 500 }), { cause: 500 })),
+    "network",
+  );
+  assert.equal(
+    classifyError(Object.assign(new Error("https://rpc.example unavailable", { cause: 503 }), { cause: 503 })),
+    "network",
+  );
   assert.equal(classifyError(new Error("fetch failed: ECONNREFUSED")), "network");
   assert.equal(classifyError({ InvalidAccessKeyError: { MethodNameMismatch: {} } }), "methodDenied");
   assert.equal(classifyError({ InvalidAccessKeyError: "AccessKeyNotFound" }), "missingKey");

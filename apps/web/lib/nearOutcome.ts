@@ -166,6 +166,10 @@ export function parseOutcome(finalOutcome: OutcomeLike | null | undefined): Pars
   return { ok: true, returnValue: undefined, events };
 }
 
+function isHttpStatusCode(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599;
+}
+
 function flattenErrorStrings(err: unknown): {
   keys: Set<string>;
   strings: string[];
@@ -175,6 +179,16 @@ function flattenErrorStrings(err: unknown): {
   const strings: string[] = [];
   const seen = new Set<object>();
   let statusCode: number | undefined;
+
+  function recordStatusCode(key: string, value: unknown): void {
+    if (
+      statusCode === undefined &&
+      (key === "status" || key === "statusCode" || key === "cause") &&
+      isHttpStatusCode(value)
+    ) {
+      statusCode = value;
+    }
+  }
 
   function visit(val: unknown, depth: number): void {
     if (depth > 12 || val == null) return;
@@ -192,12 +206,11 @@ function flattenErrorStrings(err: unknown): {
       const record = val as unknown as Record<string, unknown>;
       for (const k of Object.keys(record)) {
         keys.add(k);
-        if ((k === "status" || k === "statusCode") && typeof record[k] === "number") {
-          statusCode = record[k] as number;
-        }
+        recordStatusCode(k, record[k]);
         visit(record[k], depth + 1);
       }
       if ("cause" in val && val.cause !== undefined) {
+        recordStatusCode("cause", val.cause);
         visit(val.cause, depth + 1);
       }
       return;
@@ -211,9 +224,7 @@ function flattenErrorStrings(err: unknown): {
     const obj = val as Record<string, unknown>;
     for (const [k, v] of Object.entries(obj)) {
       keys.add(k);
-      if ((k === "status" || k === "statusCode") && typeof v === "number") {
-        statusCode = v;
-      }
+      recordStatusCode(k, v);
       visit(v, depth + 1);
     }
   }
