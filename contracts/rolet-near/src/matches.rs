@@ -991,7 +991,7 @@ mod tests {
     }
 
     /// T-111: iki reveal → Active; hp = R1 canı, ilk sıra seed'den,
-    /// R1 yüklemesi sınırlarda, LoadStarted logda ve NEP-297 olayında, süre işler.
+    /// R1 yüklemesi sınırlarda, LoadStarted + ItemsDealt logda ve NEP-297 olayında, süre işler.
     #[test]
     fn both_reveals_activate_match() {
         let mut c = setup_revealing();
@@ -1005,7 +1005,8 @@ mod tests {
         assert_eq!(m.game.max_hp, 4);
         assert_eq!(m.game.round, 1);
         assert_eq!(m.game.turn, m.seed[0] & 1);
-        assert_eq!(m.game.items, [vec![], vec![]]);
+        assert_eq!(m.game.items[0].len(), 4);
+        assert_eq!(m.game.items[1].len(), 4);
         let load = &m.game.load;
         assert_eq!(load.remaining, 8);
         assert!((2..=6).contains(&load.announced_live));
@@ -1013,19 +1014,24 @@ mod tests {
         assert!(load.fixed.iter().all(|s| s.is_none()), "hiçbir konum çekilmemiş olmalı");
         assert_ne!(m.seed, [0u8; 32]);
         assert_eq!(m.deadline_ms, now_ms() + 45_000);
-        assert_eq!(m.seq, 1);
+        assert_eq!(m.seq, 3);
+        assert_eq!(m.log.len(), 3);
         assert_eq!(
-            m.log,
-            vec![Action::LoadStarted {
+            m.log[0],
+            Action::LoadStarted {
                 live: load.announced_live,
                 blank: load.announced_blank,
                 total: load.remaining,
-            }]
+            }
         );
+        assert!(matches!(m.log[1], Action::ItemsDealt { player: 0, .. }));
+        assert!(matches!(m.log[2], Action::ItemsDealt { player: 1, .. }));
         let logs = near_sdk::test_utils::get_logs();
-        assert_eq!(logs.len(), 1);
+        assert_eq!(logs.len(), 3);
         assert!(logs[0].starts_with("EVENT_JSON:"));
         assert!(logs[0].contains("\"event\":\"load_started\""));
+        assert!(logs[1].contains("\"event\":\"items_dealt\""));
+        assert!(logs[2].contains("\"event\":\"items_dealt\""));
         c.assert_solvent();
     }
 
@@ -1272,10 +1278,11 @@ mod tests {
     fn action_log_caps_at_32_entries() {
         let c = setup_active();
         let mut m = c.match_or_panic(7);
+        let initial_seq = m.seq;
         for _ in 0..40 {
             push_action(&mut m, Action::HealCut { player: 0 });
         }
-        assert_eq!(m.seq, 41); // 1 (LoadStarted) + 40
+        assert_eq!(m.seq, initial_seq + 40);
         assert_eq!(m.log.len(), LOG_CAP);
     }
 

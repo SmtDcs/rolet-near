@@ -254,11 +254,11 @@ mod tests {
         switch("alice.testnet", NearToken::ZERO, 1_000);
         c.reveal(U64(7), Base64VecU8([1u8; 32].to_vec()));
 
-        // seq = 1 (LoadStarted).
-        assert_eq!(c.get_actions(U64(7), 0, None).len(), 1);
-        assert!(c.get_actions(U64(7), 1, None).is_empty());
+        // R1 başlangıcı: seq = 3 (LoadStarted + 2× ItemsDealt).
+        assert_eq!(c.get_actions(U64(7), 0, None).len(), 3);
+        assert!(c.get_actions(U64(7), 3, None).is_empty());
 
-        // 39 ek aksiyon → seq = 40, log = son 32 (seq 9..=40).
+        // 39 ek aksiyon → seq = 42, log = son 32 (seq 11..=42).
         let mut m = c.match_or_panic(7);
         for i in 2..=40u8 {
             push_action(
@@ -276,12 +276,12 @@ mod tests {
         // since_seq = 0 → tam 32 tamponlanmış aksiyon.
         let all_buffered = c.get_actions(U64(7), 0, None);
         assert_eq!(all_buffered.len(), 32);
-        // since_seq = 38 → seq 39 ve 40 (slot 39, 40).
-        let tail = c.get_actions(U64(7), 38, None);
+        // since_seq = 40 → seq 41 ve 42 (slot 39, 40).
+        let tail = c.get_actions(U64(7), 40, None);
         assert_eq!(tail.len(), 2);
         assert!(matches!(tail[0], Action::ItemUsed { slot: 39, .. }));
         assert!(matches!(tail[1], Action::ItemUsed { slot: 40, .. }));
-        assert!(c.get_actions(U64(7), 40, None).is_empty());
+        assert!(c.get_actions(U64(7), 42, None).is_empty());
         c.assert_solvent();
     }
 

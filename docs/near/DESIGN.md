@@ -123,18 +123,18 @@ Ses tasarımının ana fikri: neredeyse sessiz ortam + çok yakın, kuru, yükse
 Buckshot'ın hikâye modu insan-vs-bot. Rolet iki insan oyuncu, dolayısıyla:
 
 - **[KARAR — Değerler Rolet, mekanik Buckshot]** Oyun değerleri orijinal Rolet (Solana) sürümünden alınır, oynanış mekanikleri ve best-of-3 round yapısı Buckshot Roulette'ten gelir (`REFERENCE-CHECK.md` yalnızca Buckshot mekanik referansı olarak kalır).
-- **[KARAR] Maç = 3 round.** Round'u kazanan 1 puan alır; **2 puana ulaşan maçı kazanır** (3. round her zaman oynanmaz). Böylece R1 (eşyasız şans), R2 (eşyalar), R3 (tüm eşyalar + iyileşme kesilmesi) tırmanışı korunur ve maç süresi ~4–8 dk kalır.
+- **[KARAR] Maç = 3 round.** Round'u kazanan 1 puan alır; **2 puana ulaşan maçı kazanır** (3. round her zaman oynanmaz). Böylece R1 (4 eşya, 4 can), R2 (4 eşya, 4 can), R3 (tüm eşyalar + iyileşme kesilmesi) tırmanışı korunur ve maç süresi ~4–8 dk kalır.
 - Alternatif (demo için): `quick` modu — tek round, R3 kuralları. Kontrat `Config` ile ayarlanabilir; varsayılan best-of-3.
 
 Parametreler (`Config` varsayılanları, Rolet değerleri):
 
 | Round | Başlangıç canı | Yükleme başına eşya | İyileşme kesme eşiği |
 |---|---|---|---|
-| 1 | 4 | 0 | yok |
+| 1 | 4 | 4 | yok |
 | 2 | 4 | 4 | yok |
 | 3 | 4 | 4 | can ≤ 2 olunca iyileşme kapalı (`heal_cut_at: Some(2)`) |
 
-- Eşya slotu: oyuncu başına 8. Dolu slot varsa dağıtımda fazla eşya düşer.
+- Eşya slotu: oyuncu başına 4 (`Config.max_items = 4`, UI ızgarası 4 slot). Dolu slot varsa dağıtımda fazla eşya düşer.
 - Fişek yüklemesi: tabanca her zaman 8 gözlü (`Config.load_size = 8`); her yüklemede dolu sayısı `ChainSource` rastgeleliğiyle `Config.min_live..=Config.max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır. Seçilen `(live, blank)` sayıları yükleme anında açıkça duyurulur (`MatchView` + `LoadStarted`), sıra ise gizli kalır ve lazy draw ile çekilir (§4.6).
 - **[KARAR] Sıra kuralları:** R1'in ilk sırası rastgele. Yeni yüklemede sıra, kimde kaldıysa onda devam eder. Yeni round'u bir önceki round'u **kaybeden** başlatır.
 - **[KARAR] Hamle süresi:** 45 s. Süre biten oyuncuya karşı `claim_timeout` çağrılabilir → **maçı** kaybeder. (Buckshot'ta yok; zincirde terk eden oyuncuya karşı zorunlu.)
@@ -212,7 +212,7 @@ Tablo: `S` = sahibi biz (birinci şahıs), `R` = rakip yapıyor (karşıdan gör
 | A02 `round_intro` | round başı | FP → masaya hafif eğim | Işıklar söner/açılır, panoda canlar teker teker yanar, çan | çan ×N, tüp vızıltısı | 2.5 s |
 | A03 `shells_reveal` | yükleme | masaya eğim (pitch −20°) | Fişekler rafa tek tek dizilir (karışık sırada), sayılar HUD'da ve rafta okunur, 1.5 s bekleme | her fişek bir "çıt" | 2–3.5 s |
 | A04 `shells_load` | A03 sonrası | FP | Rafın kapağı kapanır, fişekler tüfeğe sokulur (sayı kadar "çıt"), tüfek masaya yatırılır. Sıra gizli. | yükleme çıtları, pompa | 1.5–2.5 s |
-| A05 `items_deal` | R2/R3 yükleme | masaya eğim | Alet çantası açılır, eşyalar teker teker kendi ızgarana uçar (S) / rakibin ızgarasına (R) | kapak, her eşya bir tok ses | N × 0.35 s |
+| A05 `items_deal` | R1/R2/R3 yükleme | masaya eğim | Alet çantası açılır, eşyalar teker teker kendi ızgarana uçar (S) / rakibin ızgarasına (R) | kapak, her eşya bir tok ses | N × 0.35 s |
 | A06 `gun_pickup` | S: silaha tıklama · R: rakip hamlesi | FP | Eller tüfeği kaldırır, kamera 5% yaklaşır | kumaş + metal | 0.5 s |
 | A07 `aim_opponent` | hedef seçimi | namlu üstünden rakibe | Namlu karşıya döner; rakip kadrajın ortasında; hafif el titremesi | nefes | 0.4 s |
 | A08 `aim_self` | hedef seçimi | **namlu ağzı kameraya** | Tüfek döner, namlu deliği ekranın ortasını kaplar; vinyet koyulaşır | metal sürtünme, kalp atışı | 0.5 s |
@@ -345,7 +345,7 @@ pub struct Match {
     hp: [u8; 2],
     max_hp: u8,
     heal_cut: [bool; 2],
-    items: [Vec<Item>; 2],                // her biri ≤ 8
+    items: [Vec<Item>; 2],                // her biri ≤ 4
     load: Load,                           // aşağıda
     turn: u8,                             // 0 | 1
     shackled: Option<u8>,
@@ -386,7 +386,7 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 Yükleme sayısı üretimi (`Config`'ten ayarlanabilir, Rolet varsayılanları):
 Tabanca her zaman `load_size` gözlüdür (varsayılan `8`); her yüklemede dolu sayısı `ChainSource` ile `min_live..=max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır (`blank = load_size - live`). Seçilen sayılar `MatchView` ve `Action::LoadStarted` üzerinden iki oyuncuya açıkça duyurulur; sıra ise gizli kalır ve atış/eşya anında lazy draw ile çekilir.
 
-Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_load` kadar (R1: 0, R2: 4, R3: 4) eşit ağırlıklı çekilir (varsayılan: R2'de hikâye beşlisi `[Loupe, Pipe, Flask, Shackle, Hacksaw]`, R3'te 9 eşyanın tamamı — DoN dörtlüsü dahil [KARAR]), slot dolunca durur.
+Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_load` kadar (R1: 4, R2: 4, R3: 4) eşit ağırlıklı çekilir (varsayılan: R1/R2'de hikâye beşlisi `[Loupe, Pipe, Flask, Shackle, Hacksaw]`, R3'te 9 eşyanın tamamı — DoN dörtlüsü dahil [KARAR]), slot dolunca (4 eşya) durur.
 
 ### 4.7 Kontrat metodları
 

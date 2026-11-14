@@ -50,7 +50,7 @@ pub struct Config {
     pub allowance_hint: NearToken,
     /// Tincture iyi yolu olasılığı (yüzde) — Rolet varsayılanı: %40.
     pub tincture_good_pct: u32,
-    /// Oyuncu başına eşya slotu — DESIGN §3.1: 8.
+    /// Oyuncu başına eşya slotu — Rolet eli: 4.
     pub max_items: u8,
     /// Yeni maç kabulü için gereken minimum treasury bakiyesi (DESIGN §4.7).
     pub min_treasury: NearToken,
@@ -68,9 +68,15 @@ impl Default for Config {
             rounds: vec![
                 RoundConfig {
                     start_hp: 4,
-                    items_per_load: 0,
+                    items_per_load: 4,
                     heal_cut_at: None,
-                    item_bag: vec![],
+                    item_bag: vec![
+                        Item::Loupe,
+                        Item::Pipe,
+                        Item::Flask,
+                        Item::Shackle,
+                        Item::Hacksaw,
+                    ],
                 },
                 RoundConfig {
                     start_hp: 4,
@@ -109,7 +115,7 @@ impl Default for Config {
             durability: 10,
             allowance_hint: NearToken::from_millinear(500),
             tincture_good_pct: 40,
-            max_items: 8,
+            max_items: 4,
             min_treasury: NearToken::from_millinear(100),
             load_size: 8,
             min_live: 2,
@@ -200,7 +206,18 @@ mod tests {
         assert_eq!(c.rounds.len(), 3);
         assert_eq!(
             c.rounds[0],
-            RoundConfig { start_hp: 4, items_per_load: 0, heal_cut_at: None, item_bag: vec![] }
+            RoundConfig {
+                start_hp: 4,
+                items_per_load: 4,
+                heal_cut_at: None,
+                item_bag: vec![
+                    Item::Loupe,
+                    Item::Pipe,
+                    Item::Flask,
+                    Item::Shackle,
+                    Item::Hacksaw,
+                ],
+            }
         );
         assert_eq!(
             c.rounds[1],
@@ -244,7 +261,7 @@ mod tests {
         assert_eq!(c.durability, 10);
         assert_eq!(c.allowance_hint, NearToken::from_millinear(500));
         assert_eq!(c.tincture_good_pct, 40);
-        assert_eq!(c.max_items, 8);
+        assert_eq!(c.max_items, 4);
         assert_eq!(c.min_treasury, NearToken::from_millinear(100));
         assert_eq!(c.load_size, 8);
         assert_eq!(c.min_live, 2);

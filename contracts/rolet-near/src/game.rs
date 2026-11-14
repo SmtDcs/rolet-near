@@ -376,7 +376,7 @@ pub fn item_bag<'a>(cfg: &'a Config, round: u8) -> &'a [Item] {
 }
 
 /// Her yüklemede iki tarafa da round tablosundaki sayıda eşya dağıtır
-/// (DESIGN §2.2.4/§4.6). Slot doluysa fazlası düşer; R1'de eşya yok.
+/// (DESIGN §2.2.4/§4.6). Slot doluysa fazlası düşer; R1 dahil her round 4 eşya.
 pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource) -> Vec<Action> {
     let round = state.round;
     let per_player = cfg
@@ -911,17 +911,17 @@ mod tests {
         }
     }
 
-    /// T-103: slot dolu iken fazlası düşer; yalnız yer açılan oyuncuya aksiyon üretilir.
+    /// T-103: slot dolu iken fazlası düşer (`max_items = 4`); yalnız yer açılan oyuncuya aksiyon üretilir.
     #[test]
     fn deal_items_drops_extras_when_slots_full() {
         let cfg = Config::default();
         let mut src = XorshiftRng::new(42);
         let mut state = state_for_round(2, Load::new(2, 2), &cfg);
-        state.items[0] = vec![Item::Pipe; 8];
-        state.items[1] = vec![Item::Pipe; 7];
+        state.items[0] = vec![Item::Pipe; 4];
+        state.items[1] = vec![Item::Pipe; 3];
         let actions = deal_items(&mut state, &cfg, &mut src);
-        assert_eq!(state.items[0].len(), 8);
-        assert_eq!(state.items[1].len(), 8);
+        assert_eq!(state.items[0].len(), 4);
+        assert_eq!(state.items[1].len(), 4);
         assert_eq!(actions.len(), 1);
         match &actions[0] {
             Action::ItemsDealt { player, items } => {
@@ -1148,9 +1148,8 @@ mod tests {
         assert!(!st.shackle_broke_this_turn);
         assert_eq!(st.turn, 0);
         // Yeni yükte rakip yeniden kelepçelenebilir.
-        st.items[0].push(Item::Shackle);
-        let slot = (st.items[0].len() - 1) as u8;
-        use_at(&mut st, slot, &mut src).unwrap();
+        st.items[0][0] = Item::Shackle;
+        use_at(&mut st, 0, &mut src).unwrap();
         assert_eq!(st.shackled, Some(1));
     }
 
@@ -1179,16 +1178,19 @@ mod tests {
         assert_eq!(st.hp, [3, 4]);
     }
 
-    /// T-104: son fişek R1'de → 8 gözlü yeni yük (roll 3 -> 5/3), eşya yok.
+    /// T-104 + VALUES-FIX-01: son fişek R1'de → 8 gözlü yeni yük (roll 3 -> 5/3), R1'de de 4'er eşya dağıtılır.
     #[test]
-    fn r1_reload_deals_no_items() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![3]);
+    fn r1_reload_deals_items() {
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![3, 0, 1, 2, 3, 4, 0, 1, 2]);
         let mut st = fire_state(1, Load::new(1, 1));
         let mut actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
         actions.extend(fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap());
-        assert_eq!(actions.len(), 5);
+        assert_eq!(actions.len(), 7);
         assert_eq!(actions[4], Action::LoadStarted { live: 5, blank: 3, total: 8 });
-        assert!(st.items[0].is_empty() && st.items[1].is_empty());
+        assert!(matches!(actions[5], Action::ItemsDealt { player: 0, .. }));
+        assert!(matches!(actions[6], Action::ItemsDealt { player: 1, .. }));
+        assert_eq!(st.items[0].len(), 4);
+        assert_eq!(st.items[1].len(), 4);
     }
 
     /// T-104: can 0 → round biter, kaybeden yeni round'u başlatır (§3.1 [KARAR]),
@@ -1760,8 +1762,8 @@ mod tests {
         assert!(matches!(actions[2], Action::LoadStarted { .. }));
     }
 
-    /// FIX-02 (S-07): Yüksek slotta ölümcül Tincture R1'de panik vermez ve
-    /// R2'de yeni dağıtılan eşyalar bozulmaz.
+    /// FIX-02 (S-07): Yüksek slotta (max_items=4 iken son slot 3) ölümcül Tincture
+    /// R1'de panik vermez ve R2'de yeni dağıtılan eşyalar bozulmaz.
     #[test]
     fn tincture_bad_roll_high_slot_does_not_panic_or_corrupt_new_items() {
         // roll 0 = 99 (Tincture kötü yol), sonraki rollar new_load + deal_items (8 item)
@@ -1771,13 +1773,11 @@ mod tests {
             Item::Loupe,
             Item::Pipe,
             Item::Flask,
-            Item::Shackle,
-            Item::Hacksaw,
             Item::Tincture,
         ];
         let mut st = item_state(1, Load::new(1, 1), items);
         st.hp = [1, 4];
-        let actions = use_at(&mut st, 5, &mut src).unwrap();
+        let actions = use_at(&mut st, 3, &mut src).unwrap();
         assert_eq!(actions[1], Action::RoundEnded { winner: 1, score: [0, 1] });
         assert_eq!(st.round, 2);
         // R2 dağıtımı her iki oyuncuya tam 4 eşya vermiş ve silinmemiş olmalı.
@@ -1785,16 +1785,16 @@ mod tests {
         assert_eq!(st.items[1].len(), 4);
     }
 
-    /// FIX-02 (S-07): Tam dolu 8 slotta Flask son fişeği atarsa boşalan 8. slota
+    /// FIX-02 (S-07): Tam dolu 4 slotta Flask son fişeği atarsa boşalan 4. slota
     /// yeni eşya dağıtılır; hata durumunda ise eşya eski slotuna geri konur.
     #[test]
     fn flask_at_full_slots_frees_slot_before_reload_and_errors_restore_slot() {
         let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 12]);
-        let mut items = vec![Item::Pipe; 7];
+        let mut items = vec![Item::Pipe; 3];
         items.push(Item::Flask);
         let mut st = item_state(2, Load::new(0, 1), items);
-        use_at(&mut st, 7, &mut src).unwrap();
-        assert_eq!(st.items[0].len(), 8);
+        use_at(&mut st, 3, &mut src).unwrap();
+        assert_eq!(st.items[0].len(), 4);
 
         // Hata yolunda slot sırası birebir korunur.
         let mut err_st = item_state(2, Load::new(1, 1), vec![Item::Loupe, Item::Pipe, Item::Flask]);
