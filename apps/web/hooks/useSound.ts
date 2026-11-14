@@ -12,6 +12,22 @@ export type SoundKey =
   | "matchWin"
   | "matchLose";
 
+export type StageCue =
+  | "gun_pickup"
+  | "trigger_cock"
+  | "gunshot_live"
+  | "click_blank"
+  | "player_hit"
+  | "item_use"
+  | "ui_select"
+  | "match_win"
+  | "match_lose"
+  | "cylinder_spin"
+  | "heartbeat"
+  | "shell_eject"
+  | "shackle_lock"
+  | "hacksaw_cut";
+
 const SOUND_SRCS: Record<SoundKey, string> = {
   triggerCock: "/sounds/triggerCock.ogg",
   gunshotLive: "/sounds/gunshotLive.ogg",
@@ -21,6 +37,21 @@ const SOUND_SRCS: Record<SoundKey, string> = {
   uiSelect: "/sounds/uiSelect.ogg",
   matchWin: "/sounds/matchWin.ogg",
   matchLose: "/sounds/matchLose.ogg",
+};
+
+/**
+ * Maps stage cue IDs to existing audio assets; cues without recorded files yet stay silent (no 404).
+ */
+const STAGE_CUE_TO_KEY: Partial<Record<StageCue, SoundKey>> = {
+  gun_pickup: "triggerCock",
+  trigger_cock: "triggerCock",
+  gunshot_live: "gunshotLive",
+  click_blank: "clickBlank",
+  player_hit: "playerHit",
+  item_use: "cardPlay",
+  ui_select: "uiSelect",
+  match_win: "matchWin",
+  match_lose: "matchLose",
 };
 
 const MUTE_KEY = "rolet:muted";
@@ -40,6 +71,7 @@ function getAudio(key: SoundKey): HTMLAudioElement | null {
 
 export function useSound(): {
   play: (key: SoundKey, opts?: { volume?: number }) => void;
+  playCue: (cue: StageCue, opts?: { volume?: number }) => void;
   muted: boolean;
   toggleMute: () => void;
 } {
@@ -50,7 +82,9 @@ export function useSound(): {
 
   // Keep ref in sync so play() closure always reads current value
   const mutedRef = useRef(muted);
-  mutedRef.current = muted;
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
 
   // Pre-load all audio on mount
   useEffect(() => {
@@ -68,6 +102,15 @@ export function useSound(): {
     });
   }, []);
 
+  const playCue = useCallback(
+    (cue: StageCue, opts?: { volume?: number }) => {
+      const mapped = STAGE_CUE_TO_KEY[cue];
+      if (!mapped) return;
+      play(mapped, opts);
+    },
+    [play],
+  );
+
   const toggleMute = useCallback(() => {
     setMuted((prev) => {
       const next = !prev;
@@ -76,5 +119,5 @@ export function useSound(): {
     });
   }, []);
 
-  return { play, muted, toggleMute };
+  return { play, playCue, muted, toggleMute };
 }
