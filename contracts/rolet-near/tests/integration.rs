@@ -1331,6 +1331,22 @@ async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std:
     Ok(())
 }
 
+fn assert_fc_tx_rejected(
+    res: Result<near_workspaces::result::ExecutionFinalResult, near_workspaces::error::Error>,
+    label: &str,
+    expected_kinds: &[&str],
+) {
+    let err = res.expect_err(&format!(
+        "{label} kontrat yürütmesine ulaşmadan access-key doğrulamasında reddedilmeli"
+    ));
+    let err_str = format!("{err:?}");
+    assert!(
+        err_str.contains("InvalidAccessKeyError(")
+            && expected_kinds.iter().any(|k| err_str.contains(k)),
+        "{label} InvalidAccessKeyError({expected_kinds:?}) ile reddedilmeli, gelen: {err_str}"
+    );
+}
+
 fn read_fc_allowance(
     ak: &near_workspaces::types::AccessKey,
 ) -> u128 {
@@ -1450,17 +1466,14 @@ async fn fix_f2_1_function_call_access_key_flow() -> Result<(), Box<dyn std::err
     let owner_fc =
         near_workspaces::Account::from_secret_key(owner.id().clone(), owner_sk.clone(), &worker);
 
-    // (a) Yasaklı metodlar FC key ile reddedilmeli (depositli ve depositsiz).
+    // (a) Yasaklı metodlar ve depositli çağrılar FC key erişim doğrulamasında reddedilmeli.
     let r_nft = alice_fc
         .call(contract.id(), "nft_transfer")
         .args_json(json!({ "receiver_id": bob.id(), "token_id": alice_token }))
         .deposit(WsNearToken::from_yoctonear(1))
         .transact()
         .await;
-    assert!(
-        r_nft.as_ref().map(|r| r.is_failure()).unwrap_or(true),
-        "nft_transfer FC key ile reddedilmeli: {r_nft:?}"
-    );
+    assert_fc_tx_rejected(r_nft, "nft_transfer", &["DepositWithFunctionCall", "MethodNameMismatch"]);
 
     let r_buy = alice_fc
         .call(contract.id(), "buy_character")
@@ -1468,29 +1481,54 @@ async fn fix_f2_1_function_call_access_key_flow() -> Result<(), Box<dyn std::err
         .deposit(WsNearToken::from_near(1))
         .transact()
         .await;
-    assert!(
-        r_buy.as_ref().map(|r| r.is_failure()).unwrap_or(true),
-        "buy_character FC key ile reddedilmeli: {r_buy:?}"
+    assert_fc_tx_rejected(
+        r_buy,
+        "buy_character(1 NEAR)",
+        &["DepositWithFunctionCall", "MethodNameMismatch", "NotEnoughAllowance"],
     );
+
+    let r_buy_nodep = alice_fc
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .transact()
+        .await;
+    assert_fc_tx_rejected(r_buy_nodep, "buy_character(0)", &["MethodNameMismatch"]);
 
     let r_fund = alice_fc
         .call(contract.id(), "fund_treasury")
         .deposit(WsNearToken::from_near(1))
         .transact()
         .await;
-    assert!(
-        r_fund.as_ref().map(|r| r.is_failure()).unwrap_or(true),
-        "fund_treasury FC key ile reddedilmeli: {r_fund:?}"
+    assert_fc_tx_rejected(
+        r_fund,
+        "fund_treasury(1 NEAR)",
+        &["DepositWithFunctionCall", "MethodNameMismatch", "NotEnoughAllowance"],
     );
+
+    let r_fund_nodep = alice_fc
+        .call(contract.id(), "fund_treasury")
+        .transact()
+        .await;
+    assert_fc_tx_rejected(r_fund_nodep, "fund_treasury(0)", &["MethodNameMismatch"]);
+
+    let r_join_dep = alice_fc
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(899),
+            "opponent": bob.id(),
+            "commit": compute_commitment([0x10u8; 32], alice.id().as_str(), 899),
+            "token_id": alice_token,
+        }))
+        .deposit(WsNearToken::from_yoctonear(1))
+        .transact()
+        .await;
+    assert_fc_tx_rejected(r_join_dep, "join(deposit=1)", &["DepositWithFunctionCall"]);
 
     let r_claim = alice_fc
         .call(contract.id(), "claim_reward")
         .transact()
         .await;
-    assert!(
-        r_claim.as_ref().map(|r| r.is_failure()).unwrap_or(true),
-        "claim_reward FC key ile reddedilmeli: {r_claim:?}"
-    );
+    assert_fc_tx_rejected(r_claim, "claim_reward", &["MethodNameMismatch"]);
 
     for owner_method in ["set_config", "pause", "unpause", "withdraw_ops"] {
         let args = if owner_method == "set_config" {
@@ -1503,10 +1541,7 @@ async fn fix_f2_1_function_call_access_key_flow() -> Result<(), Box<dyn std::err
             .args_json(args)
             .transact()
             .await;
-        assert!(
-            r_own.as_ref().map(|r| r.is_failure()).unwrap_or(true),
-            "owner metodu {owner_method} FC key ile reddedilmeli: {r_own:?}"
-        );
+        assert_fc_tx_rejected(r_own, owner_method, &["MethodNameMismatch"]);
     }
 
     // (b) FC key ile cancel + tam maç oynama ve gerçek allowance düşüş ölçümü.

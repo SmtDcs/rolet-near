@@ -67,34 +67,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$CONTRACT_DIR/../.." && pwd)"
 WASM_PATH="$CONTRACT_DIR/target/near/rolet_near.wasm"
+DEFAULT_CONFIG_PATH="$CONTRACT_DIR/init-config.json"
 ENV_LOCAL="$REPO_ROOT/apps/web/.env.local"
 
-# S6: USE_DEFAULT_CONFIG=1 ise Config::default() ile birebir uyumlu JSON üret; 0 ise ROLET_CONFIG_JSON kullan.
+# S6: USE_DEFAULT_CONFIG=1 ise Config::default() ile eşitliği testle sabitlenen init-config.json'u oku; 0 ise ROLET_CONFIG_JSON kullan.
 if [[ "$USE_DEFAULT_CONFIG" == "1" ]]; then
-  INIT_CONFIG_JSON=$(cat <<'JSON'
-{
-  "price": "1000000000000000000000000",
-  "ops_bps": 500,
-  "durability": 10,
-  "reward": "100000000000000000000000",
-  "reveal_ms": 60000,
-  "turn_ms": 45000,
-  "allowance_hint": "500000000000000000000000",
-  "tincture_good_pct": 50,
-  "max_items": 4,
-  "min_treasury": "100000000000000000000000",
-  "load_size": 8,
-  "min_live": 2,
-  "max_live": 6,
-  "copies_per_item": 4,
-  "rounds": [
-    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null},
-    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null},
-    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": 2}
-  ]
-}
-JSON
-)
+  if [[ ! -f "$DEFAULT_CONFIG_PATH" ]]; then
+    echo "HATA: Varsayılan config dosyası bulunamadı: $DEFAULT_CONFIG_PATH" >&2
+    exit 1
+  fi
+  INIT_CONFIG_JSON="$(cat "$DEFAULT_CONFIG_PATH")"
 elif [[ "$USE_DEFAULT_CONFIG" == "0" ]]; then
   : "${ROLET_CONFIG_JSON:?USE_DEFAULT_CONFIG=0 iken ROLET_CONFIG_JSON ayarlı olmalı}"
   INIT_CONFIG_JSON="$ROLET_CONFIG_JSON"

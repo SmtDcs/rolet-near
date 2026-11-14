@@ -231,6 +231,17 @@ mod tests {
     }
 
     #[test]
+    fn init_config_json_matches_default() {
+        let raw = include_str!("../init-config.json");
+        let parsed: Config = near_sdk::serde_json::from_str(raw)
+            .expect("init-config.json Config olarak ayrıştırılmalı");
+        assert_eq!(parsed, Config::default());
+        let raw_val: near_sdk::serde_json::Value = near_sdk::serde_json::from_str(raw).unwrap();
+        let def_val = near_sdk::serde_json::to_value(Config::default()).unwrap();
+        assert_eq!(raw_val, def_val, "init-config.json alanları Config::default() ile bire bir eşleşmeli");
+    }
+
+    #[test]
     fn validate_accepts_default_and_rejects_all_s05_violations() {
         assert!(Config::default().check().is_ok());
 
