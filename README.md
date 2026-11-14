@@ -37,7 +37,7 @@ What the hackathon work contains:
 - ✅ The contract is complete and tested (unit tests + `near-workspaces` sandbox integration tests).
 - ✅ The NEAR client libraries, the function-call key flow and the TS game engine are implemented and tested.
 - ✅ **Deployed on testnet** as `rolet.rolet-hk-o2611150055.testnet`, and a full match was played on it with function-call keys only. See "Live on NEAR testnet" below.
-- ⏳ The new 2.5D game scene (2D animated table and opponent, 3D revolver in Three.js) is in progress: a stage skeleton and clip player are on the dev-only `/dev/stage` page. The UI pages under `apps/web/app` are still mostly the Solana-era UI and are not yet wired to NEAR.
+- ✅ A wallet-free practice match against a bot is playable at `/practice` (2.5D table, 3D revolver, drag-to-aim). The final art and the on-chain mode in the same scene are still in progress. The UI pages under `apps/web/app` are still mostly the Solana-era UI and are not yet wired to NEAR.
 
 ---
 
@@ -154,7 +154,17 @@ ROLET_CONTRACT_ID=rolet.<you>.testnet PLAYER_A=alice.<you>.testnet PLAYER_B=bob.
 
 After the deploy, `get_config` should return `load_size: 8`, `min_live: 2`, `max_live: 6`, `max_items: 4`. A finished CLI match logs a `MatchEnded` NEP-297 event, and the winner receives the 0.1 NEAR reward.
 
-### 5. Try the function-call key flow in the browser
+### 5. Play locally (no wallet)
+
+```bash
+pnpm install
+pnpm --filter web dev
+# open http://localhost:3000/practice
+```
+
+You play a full match against a bot. The bot uses the same TypeScript rules engine that is checked against the contract. Click the revolver and drag **up** to shoot the rival or **down** to shoot yourself (a blank on yourself keeps your turn). Click an item on the table to use it.
+
+### 6. Try the function-call key flow in the browser
 
 Put the deployed contract ID in `apps/web/.env.local` as `NEXT_PUBLIC_NEAR_NETWORK=testnet` and `NEXT_PUBLIC_ROLET_CONTRACT=...`, run `pnpm --filter web dev`, and open http://localhost:3000/dev/near-key. Sign in with MyNearWallet or Meteor, and the page signs `join` and `fire` with the function-call key.
 
