@@ -177,8 +177,8 @@ impl Config {
         if self.min_live < 1 {
             return Err("min_live must be at least 1");
         }
-        if self.max_live >= self.load_size {
-            return Err("max_live must be below load_size");
+        if self.load_size.saturating_sub(self.max_live) < 2 {
+            return Err("load_size - max_live must be at least 2");
         }
         if self.min_live > self.max_live {
             return Err("min_live cannot exceed max_live");
@@ -350,7 +350,11 @@ mod tests {
 
         let mut bad = Config::default();
         bad.max_live = bad.load_size;
-        assert_eq!(bad.check(), Err("max_live must be below load_size"));
+        assert_eq!(bad.check(), Err("load_size - max_live must be at least 2"));
+        bad.max_live = bad.load_size - 1;
+        assert_eq!(bad.check(), Err("load_size - max_live must be at least 2"));
+        bad.max_live = bad.load_size - 2;
+        assert!(bad.check().is_ok());
 
         let mut bad = Config::default();
         bad.min_live = 5;
