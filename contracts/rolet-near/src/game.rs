@@ -503,6 +503,112 @@ pub fn fire(
     Ok(actions)
 }
 
+/// Eşya kullanımı (T-105/T-106, DESIGN §3.2 kural 8–9). `actor` sıra
+/// sahibi olmalı; reddedilen kullanımda **hiçbir şey tüketilmez**.
+///
+/// Orijinal beşli (§2.4/§3.4): Loupe, Pipe, Flask, Shackle, Hacksaw.
+/// Hiçbir eşya sırayı geçirmez; Flask "atış sayılmaz" (§2.4).
+pub fn use_item(
+    state: &mut GameState,
+    cfg: &Config,
+    actor: u8,
+    slot: u8,
+    steal_slot: Option<u8>,
+    src: &mut dyn ShellSource,
+) -> Result<Vec<Action>, GameError> {
+    if state.score[0] >= 2 || state.score[1] >= 2 {
+        return Err(GameError::MatchFinished);
+    }
+    if actor > 1 || actor != state.turn {
+        return Err(GameError::NotYourTurn);
+    }
+    if slot >= cfg.max_items {
+        return Err(GameError::SlotOutOfRange);
+    }
+    let actor = actor as usize;
+    if slot as usize >= state.items[actor].len() {
+        return Err(GameError::SlotEmpty);
+    }
+    let item = state.items[actor][slot as usize];
+    let actions = apply_item(state, cfg, actor, item, slot, steal_slot, src)?;
+    state.items[actor].remove(slot as usize);
+    Ok(actions)
+}
+
+/// Eşyanın etkisini uygular ve tüm aksiyonları döner. Her kol önce kontrol,
+/// sonra mutasyon sırasıyla yazılmıştır: hata durumunda state bozulmaz
+/// (Lockpick'in atomikliği buna dayanır, §3.2 kural 9).
+fn apply_item(
+    state: &mut GameState,
+    cfg: &Config,
+    actor: usize,
+    item: Item,
+    slot: u8,
+    steal_slot: Option<u8>,
+    src: &mut dyn ShellSource,
+) -> Result<Vec<Action>, GameError> {
+    let mut actions = Vec::new();
+    let item_used = |result: ItemResult| Action::ItemUsed {
+        player: actor as u8,
+        item,
+        slot,
+        result,
+    };
+    match item {
+        Item::Loupe => {
+            let shell = state.load.current(src)?;
+            actions.push(item_used(ItemResult::Private { pos: 0, shell }));
+        }
+        Item::Pipe => {
+            // İyileşme kesildiyse tamamen kapalı (§2.5, R3 eşiği).
+            if state.heal_cut {
+                return Err(GameError::HealBlocked);
+            }
+            // Maksimum candayken kullanım anlamsızdır: red, eşya korunur.
+            if state.hp[actor] >= state.max_hp {
+                return Err(GameError::ItemBlocked);
+            }
+            state.hp[actor] += 1;
+            actions.push(item_used(ItemResult::Healed { amount: 1 }));
+        }
+        Item::Flask => {
+            let shell = state.load.current(src)?;
+            state.load.advance(shell);
+            actions.push(item_used(ItemResult::Ejected { shell }));
+            actions.push(Action::Ejected { shell });
+            // Son fişekse yeni yükleme; testere etkilenmez (kural 3).
+            if state.load.is_empty() {
+                reload(state, cfg, src, &mut actions);
+            }
+        }
+        Item::Shackle => {
+            let opponent = (1 - actor) as u8;
+            if state.shackled == Some(opponent) {
+                return Err(GameError::AlreadyShackled);
+            }
+            // Bu sıra zincirinde kelepçe yeni kırıldıysa tekrar takılamaz (§3.2 kural 4).
+            if state.shackle_broke_this_turn {
+                return Err(GameError::ShackleJustBroke);
+            }
+            state.shackled = Some(opponent);
+            actions.push(item_used(ItemResult::None));
+        }
+        Item::Hacksaw => {
+            if state.saw_active {
+                return Err(GameError::SawAlreadyActive);
+            }
+            state.saw_active = true;
+            actions.push(item_used(ItemResult::None));
+        }
+        // Ek dörtlü T-106'da uygulanır.
+        Item::Ticker | Item::Magnet | Item::Lockpick | Item::Tincture => {
+            let _ = steal_slot;
+            return Err(GameError::ItemBlocked);
+        }
+    }
+    Ok(actions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -996,6 +1102,201 @@ mod tests {
         done.score = [2, 0];
         assert_eq!(
             fire(&mut done, &Config::default(), 0, Target::Opponent, &mut src),
+            Err(GameError::MatchFinished)
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // T-105: eşyalar — orijinal beşli
+    // ------------------------------------------------------------------
+
+    fn item_state(round: u8, load: Load, items: Vec<Item>) -> GameState {
+        let mut st = fire_state(round, load);
+        st.items[0] = items;
+        st
+    }
+
+    fn use_at(st: &mut GameState, slot: u8, src: &mut dyn ShellSource) -> Result<Vec<Action>, GameError> {
+        use_item(st, &Config::default(), 0, slot, None, src)
+    }
+
+    /// T-105: Loupe — mevcut fişeği kullanana gizlice gösterir; fişek/sıra değişmez.
+    #[test]
+    fn loupe_reveals_current_shell_privately() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Loupe]);
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Loupe,
+                slot: 0,
+                result: ItemResult::Private { pos: 0, shell: Shell::Live },
+            }]
+        );
+        assert!(st.items[0].is_empty());
+        assert_eq!(st.turn, 0);
+        assert_eq!(st.load.remaining, 2);
+        assert_eq!(st.load.fixed[0], Some(Shell::Live));
+        // Boş tüfekle Loupe reddedilir, eşya korunur.
+        let mut src2 = ScriptedSource::new(vec![]);
+        let mut st2 = item_state(3, Load::new(0, 0), vec![Item::Loupe]);
+        assert_eq!(use_at(&mut st2, 0, &mut src2), Err(GameError::NoShellsLeft));
+        assert_eq!(st2.items[0], vec![Item::Loupe]);
+    }
+
+    /// T-105: Pipe — +1 can; heal_cut'ta ve maksimum candayken red.
+    #[test]
+    fn pipe_heals_but_not_at_cut_or_full_hp() {
+        let mut src = ScriptedSource::new(vec![]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Pipe]);
+        st.hp = [3, 4];
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Pipe,
+                slot: 0,
+                result: ItemResult::Healed { amount: 1 },
+            }]
+        );
+        assert_eq!(st.hp, [4, 4]);
+        assert!(st.items[0].is_empty());
+        // heal_cut'ta red.
+        let mut cut = item_state(3, Load::new(1, 1), vec![Item::Pipe]);
+        cut.heal_cut = true;
+        cut.hp = [3, 3];
+        assert_eq!(use_at(&mut cut, 0, &mut src), Err(GameError::HealBlocked));
+        assert_eq!(cut.items[0], vec![Item::Pipe]);
+        assert_eq!(cut.hp, [3, 3]);
+        // Maksimum candayken red.
+        let mut full = item_state(2, Load::new(1, 1), vec![Item::Pipe]);
+        assert_eq!(use_at(&mut full, 0, &mut src), Err(GameError::ItemBlocked));
+        assert_eq!(full.items[0], vec![Item::Pipe]);
+        assert_eq!(full.hp, [4, 4]);
+    }
+
+    /// T-105: Flask — fişek atılır (herkese açık), sıra geçmez, testere
+    /// etkilenmez; son fişekse yeni yükleme + dağıtım.
+    #[test]
+    fn flask_ejects_shell_without_passing_turn() {
+        let mut src = ScriptedSource::new(vec![Shell::Blank]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Flask]);
+        st.saw_active = true;
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![
+                Action::ItemUsed {
+                    player: 0,
+                    item: Item::Flask,
+                    slot: 0,
+                    result: ItemResult::Ejected { shell: Shell::Blank },
+                },
+                Action::Ejected { shell: Shell::Blank },
+            ]
+        );
+        assert_eq!(st.turn, 0); // atış sayılmaz
+        assert_eq!(st.load.remaining, 1);
+        assert_eq!(st.load.blank_left, 0);
+        assert!(st.saw_active); // bira testereyi düşürmez (kural 3)
+        // Son fişek: yeni yükleme + R2 dağıtımı.
+        let mut src2 = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut st2 = item_state(2, Load::new(1, 1), vec![Item::Flask]);
+        st2.load = Load::new(0, 1);
+        let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
+        assert_eq!(actions2.len(), 5);
+        assert_eq!(actions2[2], Action::LoadStarted { live: 1, blank: 1, total: 2 });
+        assert_eq!(st2.load.remaining, 2);
+        assert_eq!(st2.items[0], vec![Item::Loupe, Item::Loupe]);
+        // Boş tüfekle red.
+        let mut src3 = ScriptedSource::new(vec![]);
+        let mut st3 = item_state(2, Load::new(0, 0), vec![Item::Flask]);
+        assert_eq!(use_at(&mut st3, 0, &mut src3), Err(GameError::NoShellsLeft));
+        assert_eq!(st3.items[0], vec![Item::Flask]);
+    }
+
+    /// T-105: Shackle — rakibi kelepçeler; zaten kelepçeliyse veya bu
+    /// zincirde kırıldıysa red.
+    #[test]
+    fn shackle_skips_opponent_but_rejects_repeat() {
+        let mut src = ScriptedSource::new(vec![]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Shackle]);
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Shackle,
+                slot: 0,
+                result: ItemResult::None,
+            }]
+        );
+        assert_eq!(st.shackled, Some(1));
+        assert_eq!(st.turn, 0);
+        // Rakip zaten kelepçeli → red, eşya korunur.
+        let mut again = item_state(2, Load::new(1, 1), vec![Item::Shackle]);
+        again.shackled = Some(1);
+        assert_eq!(use_at(&mut again, 0, &mut src), Err(GameError::AlreadyShackled));
+        assert_eq!(again.items[0], vec![Item::Shackle]);
+        // Bu zincirde kelepçe yeni kırıldı → red.
+        let mut broke = item_state(2, Load::new(1, 1), vec![Item::Shackle]);
+        broke.shackle_broke_this_turn = true;
+        assert_eq!(use_at(&mut broke, 0, &mut src), Err(GameError::ShackleJustBroke));
+        assert_eq!(broke.items[0], vec![Item::Shackle]);
+    }
+
+    /// T-105: Hacksaw — sonraki atışa testere kurar; zaten aktifken red.
+    #[test]
+    fn hacksaw_arms_next_shot_but_not_twice() {
+        let mut src = ScriptedSource::new(vec![]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Hacksaw]);
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Hacksaw,
+                slot: 0,
+                result: ItemResult::None,
+            }]
+        );
+        assert!(st.saw_active);
+        // Zaten aktif → red, eşya korunur.
+        let mut twice = item_state(2, Load::new(1, 1), vec![Item::Hacksaw]);
+        twice.saw_active = true;
+        assert_eq!(use_at(&mut twice, 0, &mut src), Err(GameError::SawAlreadyActive));
+        assert_eq!(twice.items[0], vec![Item::Hacksaw]);
+    }
+
+    /// T-105: ortak reddi yolları — sıra, slot aralığı, boş slot, bitmiş maç.
+    #[test]
+    fn use_item_rejects_common_violations() {
+        let mut src = ScriptedSource::new(vec![]);
+        // Sıra değil.
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Pipe]);
+        assert_eq!(
+            use_item(&mut st, &Config::default(), 1, 0, None, &mut src),
+            Err(GameError::NotYourTurn)
+        );
+        assert_eq!(st.items[0], vec![Item::Pipe]);
+        // Slot ızgara dışı.
+        assert_eq!(
+            use_item(&mut st, &Config::default(), 0, 8, None, &mut src),
+            Err(GameError::SlotOutOfRange)
+        );
+        // Slot boş.
+        assert_eq!(
+            use_item(&mut st, &Config::default(), 0, 1, None, &mut src),
+            Err(GameError::SlotEmpty)
+        );
+        // Maç bitmiş.
+        let mut done = item_state(2, Load::new(1, 1), vec![Item::Pipe]);
+        done.score = [2, 0];
+        assert_eq!(
+            use_item(&mut done, &Config::default(), 0, 0, None, &mut src),
             Err(GameError::MatchFinished)
         );
     }
