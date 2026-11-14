@@ -565,10 +565,14 @@ pub fn use_item(
     if slot as usize >= state.items[actor].len() {
         return Err(GameError::SlotEmpty);
     }
-    let item = state.items[actor][slot as usize];
-    let actions = apply_item(state, cfg, actor, item, slot, steal_slot, src)?;
-    state.items[actor].remove(slot as usize);
-    Ok(actions)
+    let item = state.items[actor].remove(slot as usize);
+    match apply_item(state, cfg, actor, item, slot, steal_slot, src) {
+        Ok(actions) => Ok(actions),
+        Err(err) => {
+            state.items[actor].insert(slot as usize, item);
+            Err(err)
+        }
+    }
 }
 
 /// Eşyanın şu an uygulanabilir olup olmadığını state'i **değiştirmeden** sınar
@@ -732,7 +736,7 @@ fn apply_item(
         }
         Item::Tincture => {
             if src.roll(100) < cfg.tincture_good_pct {
-                let healed = (state.max_hp - state.hp[actor]).min(2);
+                let healed = state.max_hp.saturating_sub(state.hp[actor]).min(2);
                 state.hp[actor] += healed;
                 actions.push(item_used(ItemResult::Healed { amount: healed }));
             } else {
@@ -1693,5 +1697,47 @@ mod tests {
         assert_eq!(st.hp, [4, 4]);
         assert_eq!(st.turn, 0); // kaybeden (0) başlar
         assert!(matches!(actions[2], Action::LoadStarted { .. }));
+    }
+
+    /// FIX-02 (S-07): Yüksek slotta ölümcül Tincture R1'de panik vermez ve
+    /// R2'de yeni dağıtılan eşyalar bozulmaz.
+    #[test]
+    fn tincture_bad_roll_high_slot_does_not_panic_or_corrupt_new_items() {
+        // roll 0 = 99 (Tincture kötü yol), sonraki rollar new_load + deal_items (4 item)
+        let mut src = ScriptedSource::with_rolls(vec![], vec![99, 0, 0, 0, 1, 2, 3]);
+        let items = vec![
+            Item::Loupe,
+            Item::Pipe,
+            Item::Flask,
+            Item::Shackle,
+            Item::Hacksaw,
+            Item::Tincture,
+        ];
+        let mut st = item_state(1, Load::new(1, 1), items);
+        st.hp = [1, 2];
+        let actions = use_at(&mut st, 5, &mut src).unwrap();
+        assert_eq!(actions[1], Action::RoundEnded { winner: 1, score: [0, 1] });
+        assert_eq!(st.round, 2);
+        // R2 dağıtımı her iki oyuncuya tam 2 eşya vermiş ve silinmemiş olmalı.
+        assert_eq!(st.items[0].len(), 2);
+        assert_eq!(st.items[1].len(), 2);
+    }
+
+    /// FIX-02 (S-07): Tam dolu 8 slotta Flask son fişeği atarsa boşalan 8. slota
+    /// yeni eşya dağıtılır; hata durumunda ise eşya eski slotuna geri konur.
+    #[test]
+    fn flask_at_full_slots_frees_slot_before_reload_and_errors_restore_slot() {
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut items = vec![Item::Pipe; 7];
+        items.push(Item::Flask);
+        let mut st = item_state(2, Load::new(0, 1), items);
+        use_at(&mut st, 7, &mut src).unwrap();
+        assert_eq!(st.items[0].len(), 8);
+
+        // Hata yolunda slot sırası birebir korunur.
+        let mut err_st = item_state(2, Load::new(1, 1), vec![Item::Loupe, Item::Pipe, Item::Flask]);
+        err_st.hp[0] = err_st.max_hp;
+        assert_eq!(use_at(&mut err_st, 1, &mut src), Err(GameError::ItemBlocked));
+        assert_eq!(err_st.items[0], vec![Item::Loupe, Item::Pipe, Item::Flask]);
     }
 }
