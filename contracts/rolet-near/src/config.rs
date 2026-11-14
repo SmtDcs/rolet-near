@@ -1,6 +1,7 @@
 //! Kontrat yapılandırması (T-101). Tüm ayarlanabilir oyun değerleri tek yerde
 //! (TASKS genel kural: "Belirsiz oyun değerleri tek bir Config/sabit yerinde durur").
 
+use crate::game::Item;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::NearToken;
@@ -19,6 +20,8 @@ pub struct RoundConfig {
     pub items_per_load: u8,
     /// `hp <= heal_cut_at` olunca iyileşme kapanır (R3 eşiği); `None` = kesme yok.
     pub heal_cut_at: Option<u8>,
+    /// Bu round'da eşit ağırlıklı dağıtılan eşya havuzu (FIX-12).
+    pub item_bag: Vec<Item>,
 }
 
 /// Kontrat sabitleri (DESIGN §3.1, §4.9 testnet varsayılanları).
@@ -61,9 +64,40 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             rounds: vec![
-                RoundConfig { start_hp: 2, items_per_load: 0, heal_cut_at: None },
-                RoundConfig { start_hp: 4, items_per_load: 2, heal_cut_at: None },
-                RoundConfig { start_hp: 6, items_per_load: 4, heal_cut_at: Some(2) },
+                RoundConfig {
+                    start_hp: 2,
+                    items_per_load: 0,
+                    heal_cut_at: None,
+                    item_bag: vec![],
+                },
+                RoundConfig {
+                    start_hp: 4,
+                    items_per_load: 2,
+                    heal_cut_at: None,
+                    item_bag: vec![
+                        Item::Loupe,
+                        Item::Pipe,
+                        Item::Flask,
+                        Item::Shackle,
+                        Item::Hacksaw,
+                    ],
+                },
+                RoundConfig {
+                    start_hp: 6,
+                    items_per_load: 4,
+                    heal_cut_at: Some(2),
+                    item_bag: vec![
+                        Item::Loupe,
+                        Item::Pipe,
+                        Item::Flask,
+                        Item::Shackle,
+                        Item::Hacksaw,
+                        Item::Ticker,
+                        Item::Magnet,
+                        Item::Lockpick,
+                        Item::Tincture,
+                    ],
+                },
             ],
             turn_ms: 45_000,
             reveal_ms: 60_000,
@@ -101,6 +135,9 @@ impl Config {
             }
             if r.items_per_load > self.max_items {
                 return Err("items_per_load cannot exceed max_items");
+            }
+            if r.items_per_load > 0 && r.item_bag.is_empty() {
+                return Err("item_bag cannot be empty when items_per_load > 0");
             }
         }
         if self.tincture_good_pct > 100 {
@@ -158,15 +195,41 @@ mod tests {
         assert_eq!(c.rounds.len(), 3);
         assert_eq!(
             c.rounds[0],
-            RoundConfig { start_hp: 2, items_per_load: 0, heal_cut_at: None }
+            RoundConfig { start_hp: 2, items_per_load: 0, heal_cut_at: None, item_bag: vec![] }
         );
         assert_eq!(
             c.rounds[1],
-            RoundConfig { start_hp: 4, items_per_load: 2, heal_cut_at: None }
+            RoundConfig {
+                start_hp: 4,
+                items_per_load: 2,
+                heal_cut_at: None,
+                item_bag: vec![
+                    Item::Loupe,
+                    Item::Pipe,
+                    Item::Flask,
+                    Item::Shackle,
+                    Item::Hacksaw,
+                ],
+            }
         );
         assert_eq!(
             c.rounds[2],
-            RoundConfig { start_hp: 6, items_per_load: 4, heal_cut_at: Some(2) }
+            RoundConfig {
+                start_hp: 6,
+                items_per_load: 4,
+                heal_cut_at: Some(2),
+                item_bag: vec![
+                    Item::Loupe,
+                    Item::Pipe,
+                    Item::Flask,
+                    Item::Shackle,
+                    Item::Hacksaw,
+                    Item::Ticker,
+                    Item::Magnet,
+                    Item::Lockpick,
+                    Item::Tincture,
+                ],
+            }
         );
         assert_eq!(c.turn_ms, 45_000);
         assert_eq!(c.reveal_ms, 60_000);
@@ -257,5 +320,9 @@ mod tests {
         let mut bad = Config::default();
         bad.r2_first_load = Some((5, 4));
         assert_eq!(bad.check(), Err("invalid preset load"));
+
+        let mut bad = Config::default();
+        bad.rounds[1].item_bag.clear();
+        assert_eq!(bad.check(), Err("item_bag cannot be empty when items_per_load > 0"));
     }
 }

@@ -378,27 +378,12 @@ pub fn new_load(round: u8, load_index: u8, cfg: &Config, src: &mut dyn ShellSour
     Load::new(live, total - live)
 }
 
-/// Eşya torbası (DESIGN §4.6 [KARAR]): R2'de orijinal beşli + Ticker,
-/// R3'te dokuzun tamamı. R1'de eşya dağıtılmaz.
-pub fn item_bag(round: u8) -> &'static [Item] {
-    const R2_BAG: &[Item] =
-        &[Item::Loupe, Item::Pipe, Item::Flask, Item::Shackle, Item::Hacksaw, Item::Ticker];
-    const R3_BAG: &[Item] = &[
-        Item::Loupe,
-        Item::Pipe,
-        Item::Flask,
-        Item::Shackle,
-        Item::Hacksaw,
-        Item::Ticker,
-        Item::Magnet,
-        Item::Lockpick,
-        Item::Tincture,
-    ];
-    match round {
-        2 => R2_BAG,
-        3 => R3_BAG,
-        _ => &[],
-    }
+/// `Config::rounds` içinden ilgili round'un eşya torbasını döner (FIX-12).
+pub fn item_bag<'a>(cfg: &'a Config, round: u8) -> &'a [Item] {
+    cfg.rounds
+        .get(round.saturating_sub(1) as usize)
+        .map(|r| r.item_bag.as_slice())
+        .unwrap_or(&[])
 }
 
 /// Her yüklemede iki tarafa da round tablosundaki sayıda eşya dağıtır
@@ -410,7 +395,7 @@ pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource
         .get(round.saturating_sub(1) as usize)
         .map(|r| r.items_per_load as usize)
         .unwrap_or(0);
-    let bag = item_bag(round);
+    let bag = item_bag(cfg, round);
     let mut actions = Vec::new();
     if per_player == 0 || bag.is_empty() {
         return actions;
@@ -616,14 +601,8 @@ fn check_item(
                 return Err(GameError::NoShellsLeft);
             }
         }
-        // Ticker gelecekteki fişek ister; tek fişek kaldığında verilecek
-        // bilgi yoktur → kullanım reddedilir, eşya korunur [Buckshot
-        // davranışı T-001 referans doğrulamasında teyit edilecek].
-        Item::Ticker => {
-            if state.load.remaining < 2 {
-                return Err(GameError::ItemBlocked);
-            }
-        }
+        // Ticker: ≤1 fişekte tüketilir ve `ItemResult::None` üretir (DECISIONS #8).
+        Item::Ticker => {}
         Item::Pipe => {
             if state.heal_cut[actor] {
                 return Err(GameError::HealBlocked);
@@ -726,11 +705,15 @@ fn apply_item(
             actions.push(item_used(ItemResult::None));
         }
         Item::Ticker => {
-            // Gelecek konumlar [1, remaining-1]; mevcut (0) hariç.
-            let max = state.load.remaining as u32 - 1;
-            let pos = 1 + src.roll(max) as usize;
-            let shell = state.load.peek_at(pos, src)?;
-            actions.push(item_used(ItemResult::Private { pos: pos as u8, shell }));
+            if state.load.remaining < 2 {
+                actions.push(item_used(ItemResult::None));
+            } else {
+                // Gelecek konumlar [1, remaining-1]; mevcut (0) hariç.
+                let max = state.load.remaining as u32 - 1;
+                let pos = 1 + src.roll(max) as usize;
+                let shell = state.load.peek_at(pos, src)?;
+                actions.push(item_used(ItemResult::Private { pos: pos as u8, shell }));
+            }
         }
         Item::Magnet => {
             let shell = state.load.current(src)?;
@@ -929,7 +912,7 @@ mod tests {
                 let mut state = state_for_round(round, load, &cfg);
                 let actions = deal_items(&mut state, &cfg, &mut src);
                 let expected = cfg.rounds[(round - 1) as usize].items_per_load as usize;
-                let bag = item_bag(round);
+                let bag = item_bag(&cfg, round);
                 for player in 0..2usize {
                     assert_eq!(state.items[player].len(), expected);
                     assert!(state.items[player].iter().all(|i| bag.contains(i)));
@@ -960,7 +943,7 @@ mod tests {
             Action::ItemsDealt { player, items } => {
                 assert_eq!(*player, 1);
                 assert_eq!(items.len(), 1);
-                assert!(item_bag(2).contains(&items[0]));
+                assert!(item_bag(&cfg, 2).contains(&items[0]));
             }
             other => panic!("beklenmedik aksiyon: {other:?}"),
         }
@@ -1549,13 +1532,23 @@ mod tests {
         assert_eq!(st.load.remaining, 3); // fişek tüketilmez
         assert_eq!(st.load.fixed[1], Some(Shell::Live));
         assert_eq!(st.turn, 0);
-        // Tek fişek kaldıysa bilgi yok → red, eşya korunur.
+        // Tek fişek kaldıysa bilgi yok → eşya boşa gider (tüketilir, ItemResult::None, DECISIONS #8).
         let mut src2 = ScriptedSource::new(vec![]);
         let mut load = Load::new(1, 1);
         load.advance(Shell::Live);
         let mut st2 = item_state(3, load, vec![Item::Ticker]);
-        assert_eq!(use_at(&mut st2, 0, &mut src2), Err(GameError::ItemBlocked));
-        assert_eq!(st2.items[0], vec![Item::Ticker]);
+        let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
+        assert_eq!(
+            actions2,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Ticker,
+                slot: 0,
+                result: ItemResult::None,
+            }]
+        );
+        assert!(st2.items[0].is_empty());
+        assert_eq!(st2.load.remaining, 1);
     }
 
     /// T-106: Magnet — mevcut fişeğin kutbunu çevirir; `announced_*`

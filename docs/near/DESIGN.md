@@ -385,7 +385,7 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 Yükleme sayısı üretimi (`Config`'ten ayarlanabilir):
 R1'de sabit sıra `r1_loads` (`[(1, 2), (3, 2)]`, sonrası `total ≤ 4`), R2 ilk yükü `r2_first_load` (`Some((1, 1))`), diğer tüm yüklerde DoN formülü: `total = 2 + r % 7` (2–8), `live = max(1, total/2)` (her zaman `1 ≤ live ≤ blank`).
 
-Eşya dağıtımı: `items_per_load[round]` kadar, eşit ağırlıklı torbadan (round 2'de yalnızca orijinal beşli + `Ticker`, round 3'te tamamı **[KARAR]**), slot dolunca durur.
+Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_load` kadar eşit ağırlıklı çekilir (varsayılan: R2'de hikâye beşlisi `[Loupe, Pipe, Flask, Shackle, Hacksaw]`, R3'te 9 eşyanın tamamı — DoN dörtlüsü dahil [KARAR]), slot dolunca durur.
 
 ### 4.7 Kontrat metodları
 
