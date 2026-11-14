@@ -3,6 +3,7 @@
 //! F1 kuralı: bu modül `near_sdk::env` kullanmaz. Rastgelelik sonradan
 //! `ShellSource` trait'i üzerinden enjekte edilir (T-102).
 
+use crate::config::Config;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 
@@ -305,6 +306,70 @@ impl Load {
     }
 }
 
+/// Yeni yükleme üretir (DESIGN §4.6): `total = 2 + roll(7) % 7` (2–8),
+/// R1'de `total <= 4` [KARAR]; `live = clamp(total/2 + delta, 1, total-1)`,
+/// `delta = roll(3) - 1`. Yalnızca sayılar yazılır; hiçbir konum çekilmez.
+pub fn new_load(round: u8, src: &mut dyn ShellSource) -> Load {
+    let total = 2 + (src.roll(7) % 7) as u8;
+    let total = if round == 1 { total.min(4) } else { total };
+    let delta = src.roll(3) as i16 - 1;
+    let live = ((total as i16) / 2 + delta).clamp(1, total as i16 - 1) as u8;
+    Load::new(live, total - live)
+}
+
+/// Eşya torbası (DESIGN §4.6 [KARAR]): R2'de orijinal beşli + Ticker,
+/// R3'te dokuzun tamamı. R1'de eşya dağıtılmaz.
+pub fn item_bag(round: u8) -> &'static [Item] {
+    const R2_BAG: &[Item] =
+        &[Item::Loupe, Item::Pipe, Item::Flask, Item::Shackle, Item::Hacksaw, Item::Ticker];
+    const R3_BAG: &[Item] = &[
+        Item::Loupe,
+        Item::Pipe,
+        Item::Flask,
+        Item::Shackle,
+        Item::Hacksaw,
+        Item::Ticker,
+        Item::Magnet,
+        Item::Lockpick,
+        Item::Tincture,
+    ];
+    match round {
+        2 => R2_BAG,
+        3 => R3_BAG,
+        _ => &[],
+    }
+}
+
+/// Her yüklemede iki tarafa da round tablosundaki sayıda eşya dağıtır
+/// (DESIGN §2.2.4/§4.6). Slot doluysa fazlası düşer; R1'de eşya yok.
+pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource) -> Vec<Action> {
+    let round = state.round;
+    let per_player = cfg
+        .rounds
+        .get(round.saturating_sub(1) as usize)
+        .map(|r| r.items_per_load as usize)
+        .unwrap_or(0);
+    let bag = item_bag(round);
+    let mut actions = Vec::new();
+    if per_player == 0 || bag.is_empty() {
+        return actions;
+    }
+    for player in 0..2usize {
+        let free = (cfg.max_items as usize).saturating_sub(state.items[player].len());
+        let count = per_player.min(free);
+        let mut dealt = Vec::with_capacity(count);
+        for _ in 0..count {
+            let item = bag[src.roll(bag.len() as u32) as usize];
+            state.items[player].push(item);
+            dealt.push(item);
+        }
+        if !dealt.is_empty() {
+            actions.push(Action::ItemsDealt { player: player as u8, items: dealt });
+        }
+    }
+    actions
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,6 +399,138 @@ mod tests {
             shackled: Some(0),
             shackle_broke_this_turn: false,
             saw_active: true,
+        }
+    }
+
+    /// Deterministik test RNG'si (xorshift64) — T-103 sınır testleri için.
+    struct XorshiftRng(u64);
+
+    impl XorshiftRng {
+        fn new(seed: u64) -> Self {
+            XorshiftRng(seed.wrapping_add(0x9E37_79B9_7F4A_7C15) | 1)
+        }
+
+        fn next_u32(&mut self) -> u32 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            (x >> 32) as u32
+        }
+    }
+
+    impl ShellSource for XorshiftRng {
+        fn draw(&mut self, live_unfixed: u8, blank_unfixed: u8) -> Shell {
+            let total = live_unfixed + blank_unfixed;
+            if total == 0 || self.next_u32() % (total as u32) < live_unfixed as u32 {
+                Shell::Live
+            } else {
+                Shell::Blank
+            }
+        }
+
+        fn roll(&mut self, n: u32) -> u32 {
+            if n == 0 {
+                0
+            } else {
+                self.next_u32() % n
+            }
+        }
+    }
+
+    fn state_for_round(round: u8, load: Load, cfg: &Config) -> GameState {
+        let rc = &cfg.rounds[(round - 1) as usize];
+        GameState {
+            round,
+            score: [0, 0],
+            hp: [rc.start_hp, rc.start_hp],
+            max_hp: rc.start_hp,
+            heal_cut: false,
+            items: [vec![], vec![]],
+            load,
+            turn: 0,
+            shackled: None,
+            shackle_broke_this_turn: false,
+            saw_active: false,
+        }
+    }
+
+    /// T-103: DESIGN §4.6 formülü birebir uygulanıyor.
+    #[test]
+    fn new_load_follows_design_formula() {
+        // total = 2 + roll(7) % 7 = 7; delta = 0 - 1 = -1; live = 3 - 1 = 2.
+        let mut src = ScriptedSource::with_rolls(vec![], vec![5, 0]);
+        let load = new_load(3, &mut src);
+        assert_eq!((load.announced_live, load.announced_blank), (2, 5));
+        // R1: total 8 -> 4'e kesilir; delta = 2 - 1 = +1; live = 2 + 1 = 3.
+        let mut src = ScriptedSource::with_rolls(vec![], vec![6, 2]);
+        let load = new_load(1, &mut src);
+        assert_eq!((load.announced_live, load.announced_blank), (3, 1));
+        // total = 2; delta = 0 - 1 = -1; clamp -> live = 1.
+        let mut src = ScriptedSource::with_rolls(vec![], vec![0, 0]);
+        let load = new_load(2, &mut src);
+        assert_eq!((load.announced_live, load.announced_blank), (1, 1));
+    }
+
+    /// T-103: 10 000 deterministik tohumla yükleme ve dağıtım sınırları asla aşılmıyor.
+    #[test]
+    fn new_load_and_deal_bounds_hold_for_10000_seeds() {
+        let cfg = Config::default();
+        for seed in 1..=10_000u64 {
+            let mut src = XorshiftRng::new(seed);
+            for round in 1u8..=3 {
+                let load = new_load(round, &mut src);
+                let total = load.remaining;
+                assert!(total >= 2 && total <= 8, "total {total} (seed {seed}, round {round})");
+                if round == 1 {
+                    assert!(total <= 4, "R1 total {total} (seed {seed})");
+                }
+                assert!(load.live_left >= 1, "live {} (seed {seed}, round {round})", load.live_left);
+                assert!(load.blank_left >= 1, "blank {}", load.blank_left);
+                assert_eq!(load.live_left + load.blank_left, total);
+                assert_eq!(load.announced_live, load.live_left);
+                assert_eq!(load.announced_blank, load.blank_left);
+                assert_eq!(load.fixed.len(), total as usize);
+                assert!(load.fixed.iter().all(|s| s.is_none()));
+
+                let mut state = state_for_round(round, load, &cfg);
+                let actions = deal_items(&mut state, &cfg, &mut src);
+                let expected = cfg.rounds[(round - 1) as usize].items_per_load as usize;
+                let bag = item_bag(round);
+                for player in 0..2usize {
+                    assert_eq!(state.items[player].len(), expected);
+                    assert!(state.items[player].iter().all(|i| bag.contains(i)));
+                    assert!(state.items[player].len() <= cfg.max_items as usize);
+                }
+                if expected == 0 {
+                    assert!(actions.is_empty(), "R1'de eşya aksiyonu olmamalı");
+                } else {
+                    assert_eq!(actions.len(), 2);
+                }
+            }
+        }
+    }
+
+    /// T-103: slot dolu iken fazlası düşer; yalnız yer açılan oyuncuya aksiyon üretilir.
+    #[test]
+    fn deal_items_drops_extras_when_slots_full() {
+        let cfg = Config::default();
+        let mut src = XorshiftRng::new(42);
+        let mut state = state_for_round(2, Load::new(2, 2), &cfg);
+        state.items[0] = vec![Item::Pipe; 8];
+        state.items[1] = vec![Item::Pipe; 7];
+        let actions = deal_items(&mut state, &cfg, &mut src);
+        assert_eq!(state.items[0].len(), 8);
+        assert_eq!(state.items[1].len(), 8);
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            Action::ItemsDealt { player, items } => {
+                assert_eq!(*player, 1);
+                assert_eq!(items.len(), 1);
+                assert!(item_bag(2).contains(&items[0]));
+            }
+            other => panic!("beklenmedik aksiyon: {other:?}"),
         }
     }
 
