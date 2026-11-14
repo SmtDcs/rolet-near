@@ -117,9 +117,14 @@ impl Contract {
         }
     }
 
-    /// Durum şeması sürüm göçü iskeleti (FIX-F2-4).
-    /// Kırıcı borsh düzeni değişikliğinde yeni hesaba yeniden deploy yapılır veya
-    /// önceki düzeni okuyup güncel `STATE_VERSION`'a taşıyan göç dalı buraya eklenir.
+    /// Durum şeması sürüm göçü iskeleti (FIX-F2-4, FIX-F2B-4).
+    ///
+    /// UYARI: `state_version` alanı `Contract` kök yapısının sonunda olduğu için,
+    /// eski borsh düzeni `env::state_read::<Contract>()` sırasında sürüm alanına
+    /// ulaşamadan çöker; gerçek bir göç için önceki düzeni temsil eden ayrı bir
+    /// `ContractV1` yapısı tanımlayıp `env::state_read::<ContractV1>()` ile okuyarak
+    /// yeni `Contract`'a dönüştürmek gerekir (veya `DECISIONS.md` #11 gereği yeni
+    /// alt hesaba temiz deploy yapılır).
     #[init(ignore_state)]
     #[private]
     pub fn migrate() -> Self {
