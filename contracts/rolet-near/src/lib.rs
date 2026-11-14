@@ -249,6 +249,51 @@ mod tests {
         assert_eq!(migrated.treasury, NearToken::from_near(3));
     }
 
+    /// FIX-F2-7: `top_scores`/`top_slots`/`top_slot_of` kökten ayrıldığı için 100×64B
+    /// leaderboard eklense dahi `Contract` kök borsh boyutu değişmez ve `settle_storage`
+    /// tüm leaderboard depolama farkını birebir `treasury` üzerinden muhasebeleştirir.
+    #[test]
+    fn fix_f2_7_root_size_constant_and_leaderboard_storage_settled() {
+        let mut c = setup("owner.testnet", "owner.testnet");
+        c.treasury = NearToken::from_near(10);
+        let root_before = near_sdk::borsh::to_vec(&c).unwrap().len();
+        let storage_base = env::storage_usage();
+        let treasury_base = c.treasury;
+
+        let mut added_ids: Vec<AccountId> = Vec::with_capacity(100);
+        for i in 0..100u32 {
+            let prefix = format!("p{i:03}_");
+            let pad = "a".repeat(64 - prefix.len() - ".testnet".len());
+            let acc: AccountId = format!("{prefix}{pad}.testnet").parse().unwrap();
+            assert_eq!(acc.as_str().len(), 64);
+            let st = PlayerState {
+                active_match: None,
+                wins: i,
+                losses: 1,
+                played: i + 1,
+                owed: NearToken::ZERO,
+            };
+            let s_before = env::storage_usage();
+            c.update_leaderboard(&acc, &st);
+            c.settle_storage(s_before);
+            added_ids.push(acc);
+        }
+
+        let root_after = near_sdk::borsh::to_vec(&c).unwrap().len();
+        assert_eq!(root_after, root_before, "Contract kök boyutu sabit kalmalı");
+        assert!(env::storage_usage() > storage_base);
+        assert!(c.treasury < treasury_base, "leaderboard büyümesi treasury'den düşülmeli");
+
+        // Tüm kayıtlar temizlendiğinde depolama ve treasury tamamen iade edilir.
+        for acc in &added_ids {
+            let s_before = env::storage_usage();
+            c.remove_from_leaderboard(acc);
+            c.settle_storage(s_before);
+        }
+        assert_eq!(env::storage_usage(), storage_base);
+        assert_eq!(c.treasury, treasury_base);
+    }
+
     /// T-108: owner config'i değiştirir, pause/unpause çalışır.
     #[test]
     fn owner_can_set_config_and_toggle_pause() {
