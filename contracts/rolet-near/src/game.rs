@@ -183,6 +183,128 @@ impl core::fmt::Display for GameError {
 
 impl std::error::Error for GameError {}
 
+/// Fişek ve olasılık kaynağı. Kontratta zincir tabanlı lazy-draw kaynağı
+/// (T-107 `rng.rs`), testlerde `ScriptedSource` kullanılır (DESIGN §4.6).
+pub trait ShellSource {
+    /// Çekilmemiş konumlardan bir fişek türü belirler.
+    /// P(dolu) = live_unfixed / (live_unfixed + blank_unfixed).
+    fn draw(&mut self, live_unfixed: u8, blank_unfixed: u8) -> Shell;
+    /// [0, n) aralığında üniform değer (yükleme boyutu, eşya dağıtımı, şans).
+    fn roll(&mut self, n: u32) -> u32;
+}
+
+/// Test kaynağı: fişekleri çağrılma sırasıyla döner, `roll` değerleri de
+/// sırayla (tükenince 0). Deterministik test kurulumları içindir.
+#[cfg(test)]
+pub struct ScriptedSource {
+    shells: Vec<Shell>,
+    rolls: Vec<u32>,
+    shell_idx: usize,
+    roll_idx: usize,
+}
+
+#[cfg(test)]
+impl ScriptedSource {
+    pub fn new(shells: Vec<Shell>) -> Self {
+        Self { shells, rolls: Vec::new(), shell_idx: 0, roll_idx: 0 }
+    }
+
+    pub fn with_rolls(shells: Vec<Shell>, rolls: Vec<u32>) -> Self {
+        Self { shells, rolls, shell_idx: 0, roll_idx: 0 }
+    }
+}
+
+#[cfg(test)]
+impl ShellSource for ScriptedSource {
+    fn draw(&mut self, _live_unfixed: u8, _blank_unfixed: u8) -> Shell {
+        let shell = self
+            .shells
+            .get(self.shell_idx)
+            .copied()
+            .expect("ScriptedSource: scripted shells exhausted");
+        self.shell_idx += 1;
+        shell
+    }
+
+    fn roll(&mut self, n: u32) -> u32 {
+        if n == 0 {
+            return 0;
+        }
+        let v = self.rolls.get(self.roll_idx).copied().unwrap_or(0);
+        self.roll_idx += 1;
+        v % n
+    }
+}
+
+impl Load {
+    /// Tüm konumları çekilmemiş bir yükleme kurar (`new_load` ve testler için).
+    pub fn new(live: u8, blank: u8) -> Self {
+        let remaining = live + blank;
+        Self {
+            announced_live: live,
+            announced_blank: blank,
+            remaining,
+            live_left: live,
+            blank_left: blank,
+            fixed: vec![None; remaining as usize],
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.remaining == 0
+    }
+
+    /// Çekilmiş dolu konum sayısı.
+    pub fn fixed_live(&self) -> u8 {
+        self.fixed.iter().filter(|s| matches!(s, Some(Shell::Live))).count() as u8
+    }
+
+    /// Çekilmiş boş konum sayısı.
+    pub fn fixed_blank(&self) -> u8 {
+        self.fixed.iter().filter(|s| matches!(s, Some(Shell::Blank))).count() as u8
+    }
+
+    /// Henüz çekilmemiş konumlardaki dolu sayısı.
+    pub fn live_unfixed(&self) -> u8 {
+        self.live_left - self.fixed_live()
+    }
+
+    /// Henüz çekilmemiş konumlardaki boş sayısı.
+    pub fn blank_unfixed(&self) -> u8 {
+        self.blank_left - self.fixed_blank()
+    }
+
+    /// Sıradaki (0. konumdaki) fişeği döndürür; çekilmemişse kaynaktan çeker.
+    pub fn current(&mut self, src: &mut dyn ShellSource) -> Result<Shell, GameError> {
+        self.fix(0, src)
+    }
+
+    /// `pos` konumundaki (0 = sıradaki) fişeği döndürür; çekilmemişse
+    /// kaynaktan çekip `fixed`'e yazar (unfixed sayıları buna bağlı güncellenir).
+    pub fn peek_at(&mut self, pos: usize, src: &mut dyn ShellSource) -> Result<Shell, GameError> {
+        self.fix(pos, src)
+    }
+
+    /// Lazy draw çekirdeği (DESIGN §4.6): konum daha önce çekildiyse
+    /// kaynağı tüketmeden aynı sonucu döner.
+    pub fn fix(&mut self, pos: usize, src: &mut dyn ShellSource) -> Result<Shell, GameError> {
+        if self.remaining == 0 {
+            return Err(GameError::NoShellsLeft);
+        }
+        if pos >= self.remaining as usize {
+            return Err(GameError::PositionOutOfRange);
+        }
+        if let Some(shell) = self.fixed[pos] {
+            return Ok(shell);
+        }
+        let live_unfixed = self.live_unfixed();
+        let blank_unfixed = self.blank_unfixed();
+        let shell = src.draw(live_unfixed, blank_unfixed);
+        self.fixed[pos] = Some(shell);
+        Ok(shell)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +335,65 @@ mod tests {
             shackle_broke_this_turn: false,
             saw_active: true,
         }
+    }
+
+    /// T-102 (a): tüm konumlar çekildiğinde dolu sayısı başlangıçtaki dolu sayısına eşit.
+    #[test]
+    fn all_positions_drawn_match_announced_live() {
+        // 2 dolu + 3 boş; kaynak sırayla [B, L, B, L, B] döner.
+        let mut src = ScriptedSource::new(vec![
+            Shell::Blank,
+            Shell::Live,
+            Shell::Blank,
+            Shell::Live,
+            Shell::Blank,
+        ]);
+        let mut load = Load::new(2, 3);
+        assert_eq!(load.remaining, 5);
+        for pos in 0..5 {
+            load.peek_at(pos, &mut src).unwrap();
+        }
+        assert_eq!(load.fixed_live(), 2);
+        assert_eq!(load.fixed_blank(), 3);
+        assert_eq!(load.live_unfixed(), 0);
+        assert_eq!(load.blank_unfixed(), 0);
+        assert_eq!(load.live_left, 2);
+        assert_eq!(load.blank_left, 3);
+    }
+
+    /// T-102 (b): önce ileri konum (`peek_at(3)`) sonra 0..2 çekilince sayaçlar tutarlı.
+    #[test]
+    fn forward_peek_keeps_counts_consistent() {
+        let mut src = ScriptedSource::new(vec![Shell::Live, Shell::Blank, Shell::Live, Shell::Blank]);
+        let mut load = Load::new(2, 2);
+        assert_eq!(load.peek_at(3, &mut src).unwrap(), Shell::Live);
+        // Aynı konum tekrar sorulursa kaynağı tüketmeden aynı fişek döner.
+        assert_eq!(load.peek_at(3, &mut src).unwrap(), Shell::Live);
+        assert_eq!(load.fixed_live(), 1);
+        assert_eq!(load.live_unfixed(), 1);
+        assert_eq!(load.blank_unfixed(), 2);
+        for pos in 0..3 {
+            load.peek_at(pos, &mut src).unwrap();
+        }
+        assert_eq!(load.fixed_live(), 2);
+        assert_eq!(load.fixed_blank(), 2);
+        assert_eq!(load.live_unfixed(), 0);
+        assert_eq!(load.blank_unfixed(), 0);
+        assert_eq!(load.live_left + load.blank_left, load.remaining);
+    }
+
+    /// T-102 (c): `remaining == 0` iken çekme hata verir.
+    #[test]
+    fn draw_on_empty_load_errors() {
+        let mut src = ScriptedSource::new(vec![]);
+        let mut load = Load::new(0, 0);
+        assert!(load.is_empty());
+        assert_eq!(load.current(&mut src), Err(GameError::NoShellsLeft));
+        assert_eq!(load.peek_at(0, &mut src), Err(GameError::NoShellsLeft));
+        // Dolu yükte kapsam dışı konum ayrı hatadır.
+        let mut src2 = ScriptedSource::new(vec![Shell::Live]);
+        let mut load2 = Load::new(1, 0);
+        assert_eq!(load2.peek_at(1, &mut src2), Err(GameError::PositionOutOfRange));
     }
 
     /// Tüm oyun tipleri borsh + serde türevleriyle gidiş-dönüş serileşiyor.
