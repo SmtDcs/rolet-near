@@ -10,7 +10,9 @@ use near_sdk::serde::{Deserialize, Serialize};
 /// Tüfekteki fişek türü (dolu / boş).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub enum Shell {
     /// Dolu.
@@ -22,7 +24,9 @@ pub enum Shell {
 /// Eşya kod adları (DESIGN §3.4 — etkiler Buckshot ile birebir, isim/prop özgün).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub enum Item {
     /// Saatçi lupu: mevcut fişeği yalnız kullanana gösterir.
@@ -48,7 +52,9 @@ pub enum Item {
 /// Ateş hedefi.
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub enum Target {
     SelfTarget,
@@ -59,7 +65,9 @@ pub enum Target {
 /// görünür ama yalnızca kullanan tarafın istemcisi gösterir (DESIGN §4.6 v1 sınırı).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde", tag = "kind")]
 pub enum ItemResult {
     /// Gösterilecek sonuç yok (Shackle, Hacksaw, Magnet, Lockpick).
@@ -78,7 +86,9 @@ pub enum ItemResult {
 /// anında `ShellSource`'tan çekilir (lazy draw, T-102).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Load {
     /// Yüklemede gösterilen dolu sayısı; asla değişmez.
@@ -99,7 +109,9 @@ pub struct Load {
 /// alanları sonradan `matches.rs`'te durur).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub struct GameState {
     /// 1..=3.
@@ -123,11 +135,33 @@ pub struct GameState {
     pub saw_active: bool,
 }
 
+/// Maçın `Revealing` aşamasındaki (oyunun kurulmadan önceki) yer tutucusu.
+/// Gerçek değerler ikinci `reveal`'da yazılır (matches.rs T-111).
+impl Default for GameState {
+    fn default() -> Self {
+        Self {
+            round: 1,
+            score: [0, 0],
+            hp: [0, 0],
+            max_hp: 0,
+            heal_cut: false,
+            items: [Vec::new(), Vec::new()],
+            load: Load::new(0, 0),
+            turn: 0,
+            shackled: None,
+            shackle_broke_this_turn: false,
+            saw_active: false,
+        }
+    }
+}
+
 /// İstemci animasyon kuyruğu aksiyonları (DESIGN §4.8). JSON'da iç etiket
 /// (`kind`) ile serileşir; NEP-297 `data` payload'ı da bu formattır (T-114).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, PartialEq, Eq, Debug,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde", tag = "kind")]
 pub enum Action {
     LoadStarted { live: u8, blank: u8, total: u8 },

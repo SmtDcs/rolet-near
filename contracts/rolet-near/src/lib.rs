@@ -14,13 +14,14 @@ pub mod treasury;
 pub mod views;
 
 use config::Config;
+use matches::{Match, PlayerState};
 use near_contract_standards::non_fungible_token::{NonFungibleToken, TokenId};
-use near_sdk::collections::LookupMap;
+use near_sdk::collections::{LookupMap, UnorderedSet};
 use near_sdk::{env, near, BorshStorageKey, AccountId, NearToken, PanicOnDefault};
 use nft::CharacterState;
 
-/// Kontrat durumu (DESIGN §4.5). Maç, oyuncu ve NFT koleksiyonları ilgili
-/// görevlerde (T-109/T-110) eklenir.
+/// Kontrat durumu (DESIGN §4.5). Maç, oyuncu ve NFT koleksiyonlarının
+/// metodları `nft.rs` (T-109) ve `matches.rs` (T-110..) modüllerindedir.
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Contract {
@@ -40,6 +41,12 @@ pub struct Contract {
     character: LookupMap<TokenId, CharacterState>,
     /// Basılan token sayacı; `token_id = "<kind>:<nonce>"`.
     mint_nonce: u64,
+    /// Oyuncu başına maç/istatistik/ödül durumu (DESIGN §4.5, T-110).
+    players: LookupMap<AccountId, PlayerState>,
+    /// Maçlar (T-110).
+    matches: LookupMap<u64, Match>,
+    /// Leaderboard için oyuncu listesi (T-115).
+    player_index: UnorderedSet<AccountId>,
 }
 
 /// near-sdk koleksiyonları için önekler (birbirinden benzersiz).
@@ -49,6 +56,9 @@ enum StorageKey {
     TokenMetadata,
     TokensPerOwner,
     Character,
+    Players,
+    Matches,
+    PlayerIndex,
 }
 
 #[near]
@@ -71,6 +81,9 @@ impl Contract {
             ),
             character: LookupMap::new(StorageKey::Character),
             mint_nonce: 0,
+            players: LookupMap::new(StorageKey::Players),
+            matches: LookupMap::new(StorageKey::Matches),
+            player_index: UnorderedSet::new(StorageKey::PlayerIndex),
         }
     }
 
