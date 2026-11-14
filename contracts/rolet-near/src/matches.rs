@@ -242,7 +242,8 @@ impl Contract {
         let reward = self.config.reward;
         if reward > NearToken::ZERO {
             let winner_account = &m.players[winner as usize];
-            if self.treasury >= reward {
+            let payable_free = self.free_balance().saturating_sub(self.ops_balance);
+            if self.treasury >= reward && payable_free >= reward {
                 self.treasury = self.treasury.saturating_sub(reward);
                 Promise::new(winner_account.clone()).transfer(reward).detach();
             } else {
@@ -546,13 +547,14 @@ impl Contract {
         produced
     }
 
-    /// Treasury yetersizken `owed` olarak birikmiş ödülü çeker (T-113, DESIGN §4.7).
+    /// Treasury veya serbest bakiye yetersizken `owed` olarak birikmiş ödülü çeker (T-113, S-02).
     pub fn claim_reward(&mut self) -> NearToken {
         require_direct_call();
         let player = env::predecessor_account_id();
         let mut st = self.player_state(&player);
         require!(st.owed > NearToken::ZERO, "no reward owed");
-        let claimable = st.owed.min(self.treasury);
+        let payable_free = self.free_balance().saturating_sub(self.ops_balance);
+        let claimable = st.owed.min(self.treasury).min(payable_free);
         require!(claimable > NearToken::ZERO, "insufficient treasury");
         st.owed = st.owed.saturating_sub(claimable);
         self.treasury = self.treasury.saturating_sub(claimable);
@@ -1534,5 +1536,69 @@ mod tests {
             .build();
         near_sdk::testing_env!(ctx);
         c.use_item(U64(7), 0, None);
+    }
+
+    // ------------------------------------------------------------------
+    // FIX-04: Ödeme güvenliği (serbest bakiye kontrolü)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn finish_match_credits_owed_when_free_balance_is_insufficient() {
+        let mut c = setup_active();
+        let mut m = c.match_or_panic(7);
+        m.game.score = [1, 0];
+        m.game.hp = [2, 1];
+        m.game.load = Load::new(1, 1);
+        m.game.turn = 0;
+        c.matches.insert(&7, &m);
+
+        // Treasury muhasebede yüksek görünse bile gerçek serbest bakiye ödülü
+        // karşılamıyorsa LackBalanceForState riski yerine owed yazılır.
+        let current_storage = env::storage_usage();
+        let stake = NearToken::from_yoctonear(
+            current_storage as u128 * env::storage_byte_cost().as_yoctonear(),
+        );
+        let ctx = VMContextBuilder::new()
+            .signer_account_id("alice.testnet".parse().unwrap())
+            .predecessor_account_id("alice.testnet".parse().unwrap())
+            .storage_usage(current_storage)
+            .account_balance(stake.saturating_add(NearToken::from_millinear(20)))
+            .block_timestamp(2_000 * 1_000_000)
+            .build();
+        near_sdk::testing_env!(ctx);
+
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+
+        assert_eq!(c.match_or_panic(7).status, Status::Finished);
+        assert!(get_created_receipts().is_empty());
+        let alice_st = c.player_state(&"alice.testnet".parse().unwrap());
+        assert_eq!(alice_st.owed, NearToken::from_millinear(100));
+    }
+
+    #[test]
+    fn claim_reward_caps_at_available_free_balance() {
+        let mut c = setup_active();
+        c.ops_balance = NearToken::ZERO;
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let mut st = c.player_state(&alice);
+        st.owed = NearToken::from_millinear(100);
+        c.players.insert(&alice, &st);
+
+        let current_storage = env::storage_usage();
+        let stake = NearToken::from_yoctonear(
+            current_storage as u128 * env::storage_byte_cost().as_yoctonear(),
+        );
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(alice.clone())
+            .predecessor_account_id(alice.clone())
+            .storage_usage(current_storage)
+            .account_balance(stake.saturating_add(NearToken::from_millinear(30)))
+            .build();
+        near_sdk::testing_env!(ctx);
+
+        let claimed = c.claim_reward();
+        assert_eq!(claimed, NearToken::from_millinear(30));
+        assert_eq!(c.player_state(&alice).owed, NearToken::from_millinear(70));
     }
 }

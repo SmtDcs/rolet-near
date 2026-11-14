@@ -426,3 +426,155 @@ async fn fix01_gas_floor_rejects_low_gas_and_passes_min_action_gas() -> Result<(
     assert_eq!(mv.status, Status::Finished);
     Ok(())
 }
+
+#[tokio::test]
+async fn fix04_low_balance_match_finishes_and_credits_owed() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+
+    let owner = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let root = worker.root_account()?;
+    // WASM (~316 KB -> ~3.16 NEAR stake) üstünde çok az serbest bakiye bırak.
+    let sub = root
+        .create_subaccount("lowbal")
+        .initial_balance(WsNearToken::from_millinear(3_210))
+        .transact()
+        .await?
+        .into_result()?;
+    let contract = sub.deploy(&wasm).await?.into_result()?;
+
+    let mut cfg = Config::default();
+    cfg.price = near_sdk::NearToken::from_millinear(200);
+    cfg.ops_bps = 5_000;
+    cfg.durability = 1;
+    cfg.reward = near_sdk::NearToken::from_millinear(190);
+    cfg.min_treasury = near_sdk::NearToken::from_millinear(100);
+
+    contract
+        .call("new")
+        .args_json(json!({
+            "owner": owner.id(),
+            "config": cfg,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let alice_token: String = alice
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(WsNearToken::from_millinear(200))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+
+    let bob_token: String = bob
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Ayarci }))
+        .deposit(WsNearToken::from_millinear(200))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+
+    owner
+        .call(contract.id(), "withdraw_ops")
+        .transact()
+        .await?
+        .into_result()?;
+
+    let match_id = 27u64;
+    let secret_a = [0x51u8; 32];
+    let secret_b = [0x62u8; 32];
+
+    alice
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "opponent": bob.id(),
+            "commit": compute_commitment(secret_a, alice.id().as_str(), match_id),
+            "token_id": alice_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    bob.call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "opponent": alice.id(),
+            "commit": compute_commitment(secret_b, bob.id().as_str(), match_id),
+            "token_id": bob_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    alice
+        .call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "secret": Base64VecU8(secret_a.to_vec()),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    bob.call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "secret": Base64VecU8(secret_b.to_vec()),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let mut mv: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(match_id) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+
+    let mut turns = 0u32;
+    while mv.status == Status::Active {
+        turns += 1;
+        assert!(turns <= 120);
+        let actor = if mv.game.turn == 0 { &alice } else { &bob };
+        actor
+            .call(contract.id(), "fire")
+            .args_json(json!({
+                "match_id": U64(match_id),
+                "target": Target::Opponent,
+            }))
+            .transact()
+            .await?
+            .into_result()?;
+        mv = contract
+            .view("get_match")
+            .args_json(json!({ "match_id": U64(match_id) }))
+            .await?
+            .json::<Option<MatchView>>()?
+            .unwrap();
+    }
+
+    assert_eq!(mv.status, Status::Finished);
+    let winner_idx = mv.winner.expect("kazanan atanmalı");
+    let winner_acc = &mv.players[winner_idx as usize];
+    let winner_st: PlayerState = contract
+        .view("get_player")
+        .args_json(json!({ "account_id": winner_acc }))
+        .await?
+        .json()?;
+    assert!(
+        winner_st.owed > near_sdk::NearToken::ZERO,
+        "düşük bakiyede ödül owed'a yazılmalı, owed={}",
+        winner_st.owed
+    );
+    assert_eq!(winner_st.owed, near_sdk::NearToken::from_millinear(190));
+
+    Ok(())
+}
