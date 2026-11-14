@@ -71,7 +71,7 @@ export function RevolverCanvas(props: RevolverModelProps) {
       {/* Contact shadow on table surface */}
       {props.gunHolder === "table" && (
         <ContactShadows
-          position={[0, 0.39, 0.14]}
+          position={[0, 0.73, 0.05]}
           opacity={0.62}
           scale={1.4}
           blur={1.8}

@@ -12,7 +12,7 @@ export type GunPoseId = "TABLE" | "LIFTED" | "AIM_OPP" | "AIM_SELF" | "RIVAL_HAN
  */
 export const GUN_POSES: Readonly<Record<GunPoseId, GunPose>> = {
   TABLE: {
-    position: [0.0, 0.44, 0.14],
+    position: [0.0, 0.78, 0.05],
     rotation: [0.0, 0.52, Math.PI / 2],
     scale: 0.95,
   },
