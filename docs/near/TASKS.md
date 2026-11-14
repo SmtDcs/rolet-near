@@ -142,27 +142,30 @@ Bağımlılık gösterimi: `← T-xxx` = önce o bitmeli.
 
 ## F2 — Function-call access key (DESIGN §4.2, §4.3)
 
-### T-201 · Cüzdan spike · P0 · ← T-118
+### T-201 · Cüzdan spike · P0 · ← T-118 · `yerel kısım tamam, 👤 testnet doğrulaması bekliyor`
 - Küçük bir test sayfası (`apps/web/app/dev/near-key/page.tsx`, yalnız dev): Wallet Selector ile MyNearWallet, Meteor ve (varsa) HOT'ta `signIn({contractId, methodNames})` dene; hangi cüzdan key'i dApp'e veriyor, hangisi vermiyor; açık `AddKey` işleminin çalıştığı cüzdanlar.
 - Sonuçları `docs/near/WALLETS.md`'ye yaz; demo cüzdanını öner.
 - Bitti: tablo dolu; en az bir cüzdanda key ile `join` çağrısı başarılı (tx hash).
+- Durum (`F2-8`): `/dev/near-key`, `NearKeyLab.tsx` (MNW + Meteor) ve `docs/near/WALLETS.md` şablonu hazır (`dev` → 200, `prod` → 404). Gerçek cüzdan ve testnet tx doğrulaması 👤 Samet'e kaldı.
 
-### T-202 · `lib/nearKey.ts` (saf) · P0 · ← T-201
+### T-202 · `lib/nearKey.ts` (saf) · P0 · ← T-201 · `✅ Bitti`
 - Key çifti üretme, `localStorage` anahtarı `rolet:fck:<account>:<contract>`, yükle/sil, metod listesi sabiti (kontratla aynı), `isAllowanceError(err)`, `isAccessKeyMissing(err)`.
 - `lib/nearKey.test.ts` (`node:test`).
-- Bitti: `tsx --test lib/nearKey.test.ts` yeşil.
+- Bitti: `tsx --test lib/nearKey.test.ts` yeşil (`F2-2`, gerçek sandbox fixture'ları `F2-6`'da doğrulandı).
 
-### T-203 · Key ekleme akışı · P0 · ← T-202
+### T-203 · Key ekleme akışı · P0 · ← T-202 · `yerel kısım tamam, 👤 testnet doğrulaması bekliyor`
 - T-201'de seçilen yol + yedek yol (açık `AddKey`). Key yoksa / allowance bittiyse tek onay iste; varsa sessizce kullan.
 - Bitti: dev sayfasında: ilk ziyarette 1 onay, sayfa yenileyince 0 onay, `join` çalışıyor.
+- Durum (`F2-6`, `F2-7`, `F2-8`): `lib/nearKeyFlow.ts` (`decideKeyAction`, `checkKeyOnChain`, `signOutKey`) birim testleri ve yerel sandbox `AddKey` / silme akışı yeşil; gerçek cüzdanla 1 onay → 0 onay doğrulaması 👤 Samet'e kaldı.
 
-### T-204 · Key ile imzalı çağrı katmanı · P0 · ← T-203
+### T-204 · Key ile imzalı çağrı katmanı · P0 · ← T-203 · `yerel kısım tamam, 👤 testnet doğrulaması bekliyor`
 - `sendGameCall(method, args)`: FC key ile imzala, RPC'ye gönder, outcome'tan dönüş değeri + logları (`EVENT_JSON`) ayrıştır, nonce çakışmasında yeniden dene, 429'da `chainPace` benzeri geri çekilme.
 - Bitti: dev sayfasında `fire` sonucu ayrıştırılmış `Action[]` olarak görünüyor.
+- Durum (`F2-4`, `F2-5`, `F2-6`, `F2-8`): `lib/nearOutcome.ts` ve `lib/nearCall.ts` birim testleri + yerel `near-sandbox` tam maç E2E testi (`fire` → `Action[]` + `MatchEnded`) yeşil; testnet'te iki hesapla canlı `fire` ve allowance ölçümü 👤 Samet'e kaldı.
 
-### T-205 · Güvenlik testi: FC key sınırları · P0 · ← T-117
+### T-205 · Güvenlik testi: FC key sınırları · P0 · ← T-117 · `✅ FIX-F2-1 (1610c5a, cbc5d23) ile karşılandı`
 - `near-workspaces` testi: FC key ile `buy_character` (deposit) → başarısız; `set_config` → izinli metod değil, başarısız; izinli `join` → başarılı.
-- Bitti: test yeşil.
+- Bitti: test yeşil (`contracts/rolet-near/tests/integration.rs` `fix_f2_1_function_call_access_key_flow` + `apps/web/sandbox/near-e2e.test.ts` içinde `claim_reward` ve 1 yoctoNEAR allowance doğrulaması).
 
 ---
 
