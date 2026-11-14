@@ -7,6 +7,7 @@ import { PlayableStage } from "@/components/stage/PlayableStage";
 import type { GameModel } from "@/lib/game/model";
 import { PracticeEngine } from "@/lib/game/practiceEngine";
 import type { CharacterKind } from "@/lib/stage/assets";
+import { preloadStage } from "@/lib/stage/preload";
 
 function parseLatencyParam(raw: string | null): number | readonly [number, number] {
   if (!raw) return [300, 1500];
@@ -46,6 +47,7 @@ export function PracticeArena() {
   );
 
   useEffect(() => {
+    void preloadStage({ tier: "initial" });
     return () => {
       engine.dispose();
     };

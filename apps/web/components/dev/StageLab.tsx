@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSound } from "@/hooks/useSound";
 import { BEAT_CATALOG, createBeat, type BeatId } from "@/lib/game/beats";
 import { fromSnapshot } from "@/lib/game/model";
@@ -12,6 +12,7 @@ import {
   type GunPose,
   type GunPoseId,
 } from "@/lib/stage/gunPoses";
+import { preloadStage } from "@/lib/stage/preload";
 import { Stage } from "@/components/stage/Stage";
 import { createDefaultStageVisual, type GunHolder } from "@/components/stage/types";
 import { useDirector, visualFromModel } from "@/components/stage/useDirector";
@@ -19,6 +20,16 @@ import { useDirector, visualFromModel } from "@/components/stage/useDirector";
 const ALL_CLIPS = Object.keys(RIVAL_CLIP_META) as RivalClipId[];
 const ALL_BEATS = Object.keys(BEAT_CATALOG) as BeatId[];
 const POSE_IDS: GunPoseId[] = ["TABLE", "LIFTED", "AIM_OPP", "AIM_SELF", "RIVAL_HAND"];
+
+function subscribeVisibility(cb: () => void): () => void {
+  if (typeof document === "undefined") return () => {};
+  document.addEventListener("visibilitychange", cb);
+  return () => document.removeEventListener("visibilitychange", cb);
+}
+
+function getVisibilitySnapshot(): boolean {
+  return typeof document !== "undefined" ? document.hidden : false;
+}
 
 function makeScenarioSnapshot(): MatchView {
   return {
@@ -73,6 +84,14 @@ const FULL_LOAD_SCENARIO: readonly Action[] = [
 
 export function StageLab() {
   const { playCue, muted, toggleMute } = useSound();
+  const tabHidden = useSyncExternalStore(
+    subscribeVisibility,
+    getVisibilitySnapshot,
+    () => false,
+  );
+  useEffect(() => {
+    void preloadStage({ tier: "initial" });
+  }, []);
   const [characterKind, setCharacterKind] = useState<CharacterKind>("Kuleci");
   const [aim, setAim] = useState(0);
   const [gunHolderOverride, setGunHolderOverride] = useState<GunHolder | null>(null);
@@ -287,6 +306,7 @@ export function StageLab() {
           rivalClip={effectiveClip}
           characterKind={characterKind}
           fx={fx}
+          paused={tabHidden}
           customGunPoses={poses}
           overrideGunPose={activePoseData}
           hud={{
