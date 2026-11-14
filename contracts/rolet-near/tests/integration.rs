@@ -1298,3 +1298,410 @@ async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std:
 
     Ok(())
 }
+
+fn read_fc_allowance(
+    ak: &near_workspaces::types::AccessKey,
+) -> u128 {
+    match &ak.permission {
+        near_workspaces::types::AccessKeyPermission::FunctionCall(fc) => {
+            fc.allowance.expect("FC key allowance atanmış olmalı").as_yoctonear()
+        }
+        _ => panic!("FunctionCall permission bekleniyordu"),
+    }
+}
+
+/// FIX-F2-1: Gerçek `FunctionCall` access key ile tam maç, yasaklı metod reddi,
+/// allowance düşüş ölçümü ve `NotEnoughAllowance` doğrulaması.
+#[tokio::test]
+async fn fix_f2_1_function_call_access_key_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+    let owner = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let contract = worker.dev_deploy(&wasm).await?;
+
+    contract
+        .call("new")
+        .args_json(json!({ "owner": owner.id(), "config": Config::default() }))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(2))
+        .transact()
+        .await?
+        .into_result()?;
+
+    // Karakterler cüzdan (full-access) anahtarıyla satın alınır (payable).
+    let alice_token: String = alice
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    let bob_token: String = bob
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Ayarci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+
+    // Alice, Bob ve Owner hesaplarına yalnızca oyun metodlarına izin veren FC key ekle.
+    let fc_methods = [
+        "join",
+        "reveal",
+        "cancel",
+        "fire",
+        "use_item",
+        "claim_timeout",
+    ];
+    let initial_allowance = WsNearToken::from_millinear(500);
+    let alice_sk = near_workspaces::types::SecretKey::from_random(
+        near_workspaces::types::KeyType::ED25519,
+    );
+    let bob_sk = near_workspaces::types::SecretKey::from_random(
+        near_workspaces::types::KeyType::ED25519,
+    );
+    let owner_sk = near_workspaces::types::SecretKey::from_random(
+        near_workspaces::types::KeyType::ED25519,
+    );
+
+    alice
+        .batch(alice.id())
+        .add_key(
+            alice_sk.public_key(),
+            near_workspaces::types::AccessKey::function_call_access(
+                contract.id(),
+                &fc_methods,
+                Some(initial_allowance),
+            ),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    bob.batch(bob.id())
+        .add_key(
+            bob_sk.public_key(),
+            near_workspaces::types::AccessKey::function_call_access(
+                contract.id(),
+                &fc_methods,
+                Some(initial_allowance),
+            ),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .batch(owner.id())
+        .add_key(
+            owner_sk.public_key(),
+            near_workspaces::types::AccessKey::function_call_access(
+                contract.id(),
+                &fc_methods,
+                Some(initial_allowance),
+            ),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+
+    let alice_fc =
+        near_workspaces::Account::from_secret_key(alice.id().clone(), alice_sk.clone(), &worker);
+    let bob_fc =
+        near_workspaces::Account::from_secret_key(bob.id().clone(), bob_sk.clone(), &worker);
+    let owner_fc =
+        near_workspaces::Account::from_secret_key(owner.id().clone(), owner_sk.clone(), &worker);
+
+    // (a) Yasaklı metodlar FC key ile reddedilmeli (depositli ve depositsiz).
+    let r_nft = alice_fc
+        .call(contract.id(), "nft_transfer")
+        .args_json(json!({ "receiver_id": bob.id(), "token_id": alice_token }))
+        .deposit(WsNearToken::from_yoctonear(1))
+        .transact()
+        .await;
+    assert!(
+        r_nft.as_ref().map(|r| r.is_failure()).unwrap_or(true),
+        "nft_transfer FC key ile reddedilmeli: {r_nft:?}"
+    );
+
+    let r_buy = alice_fc
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await;
+    assert!(
+        r_buy.as_ref().map(|r| r.is_failure()).unwrap_or(true),
+        "buy_character FC key ile reddedilmeli: {r_buy:?}"
+    );
+
+    let r_fund = alice_fc
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await;
+    assert!(
+        r_fund.as_ref().map(|r| r.is_failure()).unwrap_or(true),
+        "fund_treasury FC key ile reddedilmeli: {r_fund:?}"
+    );
+
+    let r_claim = alice_fc
+        .call(contract.id(), "claim_reward")
+        .transact()
+        .await;
+    assert!(
+        r_claim.as_ref().map(|r| r.is_failure()).unwrap_or(true),
+        "claim_reward FC key ile reddedilmeli: {r_claim:?}"
+    );
+
+    for owner_method in ["set_config", "pause", "unpause", "withdraw_ops"] {
+        let args = if owner_method == "set_config" {
+            json!({ "config": Config::default() })
+        } else {
+            json!({})
+        };
+        let r_own = owner_fc
+            .call(contract.id(), owner_method)
+            .args_json(args)
+            .transact()
+            .await;
+        assert!(
+            r_own.as_ref().map(|r| r.is_failure()).unwrap_or(true),
+            "owner metodu {owner_method} FC key ile reddedilmeli: {r_own:?}"
+        );
+    }
+
+    // (b) FC key ile cancel + tam maç oynama ve gerçek allowance düşüş ölçümü.
+    let initial_alice = read_fc_allowance(
+        &worker.view_access_key(alice.id(), &alice_sk.public_key()).await?,
+    );
+    assert_eq!(initial_alice, initial_allowance.as_yoctonear());
+
+    // Önce join -> cancel yolu FC key ile test edilir.
+    let join_res = alice_fc
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(900),
+            "opponent": bob.id(),
+            "commit": compute_commitment([0x10u8; 32], alice.id().as_str(), 900),
+            "token_id": alice_token,
+        }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await?
+        .into_result()?;
+    let after_join_immediate = read_fc_allowance(
+        &worker.view_access_key(alice.id(), &alice_sk.public_key()).await?,
+    );
+    worker.fast_forward(3).await?;
+    let after_join_settled = read_fc_allowance(
+        &worker.view_access_key(alice.id(), &alice_sk.public_key()).await?,
+    );
+    let join_drop_immediate = initial_alice.saturating_sub(after_join_immediate);
+    let join_drop_settled = initial_alice.saturating_sub(after_join_settled);
+    println!(
+        "FC_JOIN_MEASURE gas_burnt={} immediate_drop={join_drop_immediate} settled_drop={join_drop_settled}",
+        join_res.total_gas_burnt
+    );
+
+    let cancel_res = alice_fc
+        .call(contract.id(), "cancel")
+        .args_json(json!({ "match_id": U64(900) }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await?
+        .into_result()?;
+    worker.fast_forward(3).await?;
+    let after_cancel_settled = read_fc_allowance(
+        &worker.view_access_key(alice.id(), &alice_sk.public_key()).await?,
+    );
+    let cancel_drop_settled = after_join_settled.saturating_sub(after_cancel_settled);
+    println!(
+        "FC_CANCEL_MEASURE gas_burnt={} settled_drop={cancel_drop_settled}",
+        cancel_res.total_gas_burnt
+    );
+    let before_match_alice = after_cancel_settled;
+
+    // Tam maç (join x2, reveal x2, use_item/fire).
+    let match_id = 901u64;
+    let sa = [0xAAu8; 32];
+    let sb = [0xBBu8; 32];
+    alice_fc
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "opponent": bob.id(),
+            "commit": compute_commitment(sa, alice.id().as_str(), match_id),
+            "token_id": alice_token,
+        }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await?
+        .into_result()?;
+    bob_fc
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "opponent": alice.id(),
+            "commit": compute_commitment(sb, bob.id().as_str(), match_id),
+            "token_id": bob_token,
+        }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await?
+        .into_result()?;
+
+    alice_fc
+        .call(contract.id(), "reveal")
+        .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(sa.to_vec()) }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await?
+        .into_result()?;
+    bob_fc
+        .call(contract.id(), "reveal")
+        .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(sb.to_vec()) }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let mut mv: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(match_id) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    let mut alice_calls = 2u64; // join + reveal
+    let mut bob_calls = 2u64;
+    let mut used_one_item = false;
+    let mut steps = 0u32;
+    while mv.status == Status::Active {
+        steps += 1;
+        assert!(steps <= 160, "maç 160 adımda bitmeli");
+        let turn = mv.game.turn as usize;
+        let actor = if turn == 0 {
+            alice_calls += 1;
+            &alice_fc
+        } else {
+            bob_calls += 1;
+            &bob_fc
+        };
+
+        let mut item_slot: Option<(u8, Option<u8>)> = None;
+        if !used_one_item {
+            for (idx, &it) in mv.game.items[turn].iter().enumerate() {
+                if it != Item::Lockpick && can_use_item_without_steal(&mv.game, turn, it) {
+                    item_slot = Some((idx as u8, None));
+                    break;
+                }
+            }
+        }
+        if let Some((slot, steal_slot)) = item_slot {
+            actor
+                .call(contract.id(), "use_item")
+                .args_json(json!({
+                    "match_id": U64(match_id),
+                    "slot": slot,
+                    "steal_slot": steal_slot,
+                }))
+                .gas(WsGas::from_tgas(30))
+                .transact()
+                .await?
+                .into_result()?;
+            used_one_item = true;
+        } else {
+            actor
+                .call(contract.id(), "fire")
+                .args_json(json!({
+                    "match_id": U64(match_id),
+                    "target": Target::Opponent,
+                }))
+                .gas(WsGas::from_tgas(30))
+                .transact()
+                .await?
+                .into_result()?;
+        }
+
+        mv = contract
+            .view("get_match")
+            .args_json(json!({ "match_id": U64(match_id) }))
+            .await?
+            .json::<Option<MatchView>>()?
+            .unwrap();
+    }
+    assert_eq!(mv.status, Status::Finished);
+    assert!(mv.winner.is_some());
+    assert!(used_one_item, "FC key ile en az bir use_item kullanılmalı");
+
+    worker.fast_forward(3).await?;
+    let final_alice = read_fc_allowance(
+        &worker.view_access_key(alice.id(), &alice_sk.public_key()).await?,
+    );
+    let final_bob = read_fc_allowance(
+        &worker.view_access_key(bob.id(), &bob_sk.public_key()).await?,
+    );
+    let alice_match_spent = before_match_alice.saturating_sub(final_alice);
+    let bob_match_spent = initial_allowance.as_yoctonear().saturating_sub(final_bob);
+    assert!(
+        final_alice < before_match_alice,
+        "Alice allowance düşmüş olmalı: before={before_match_alice}, final={final_alice}"
+    );
+    assert!(
+        final_bob < initial_allowance.as_yoctonear(),
+        "Bob allowance düşmüş olmalı: initial={}, final={final_bob}",
+        initial_allowance.as_yoctonear()
+    );
+
+    println!(
+        "FC_ALLOWANCE_MEASURE join_drop={join_drop_settled} cancel_drop={cancel_drop_settled} \
+         alice_calls={alice_calls} alice_match_spent={alice_match_spent} \
+         bob_calls={bob_calls} bob_match_spent={bob_match_spent}"
+    );
+
+    // (c) Allowance tükenince NotEnoughAllowance hatası alınmalı.
+    let tiny_sk = near_workspaces::types::SecretKey::from_random(
+        near_workspaces::types::KeyType::ED25519,
+    );
+    let tiny_allowance = WsNearToken::from_yoctonear(100_000_000_000_000_000_000); // 0.0001 NEAR
+    alice
+        .batch(alice.id())
+        .add_key(
+            tiny_sk.public_key(),
+            near_workspaces::types::AccessKey::function_call_access(
+                contract.id(),
+                &fc_methods,
+                Some(tiny_allowance),
+            ),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    let alice_tiny_fc =
+        near_workspaces::Account::from_secret_key(alice.id().clone(), tiny_sk, &worker);
+    let err = alice_tiny_fc
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(902),
+            "opponent": bob.id(),
+            "commit": compute_commitment([0xCCu8; 32], alice.id().as_str(), 902),
+            "token_id": alice_token,
+        }))
+        .gas(WsGas::from_tgas(30))
+        .transact()
+        .await
+        .expect_err("yetersiz allowance RPC/tx seviyesinde NotEnoughAllowance ile reddedilmeli");
+    let err_str = format!("{err:?}");
+    assert!(
+        err_str.contains("NotEnoughAllowance"),
+        "hata NotEnoughAllowance içermeli, gelen: {err_str}"
+    );
+
+    Ok(())
+}
