@@ -1,7 +1,6 @@
 //! Kontrat yapılandırması (T-101). Tüm ayarlanabilir oyun değerleri tek yerde
 //! (TASKS genel kural: "Belirsiz oyun değerleri tek bir Config/sabit yerinde durur").
 
-use crate::game::Item;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::NearToken;
@@ -20,8 +19,6 @@ pub struct RoundConfig {
     pub items_per_load: u8,
     /// `hp <= heal_cut_at` olunca iyileşme kapanır (R3 eşiği); `None` = kesme yok.
     pub heal_cut_at: Option<u8>,
-    /// Bu round'da eşit ağırlıklı dağıtılan eşya havuzu (FIX-12).
-    pub item_bag: Vec<Item>,
 }
 
 /// Kontrat sabitleri (DESIGN §3.1, §4.9 testnet varsayılanları).
@@ -72,41 +69,16 @@ impl Default for Config {
                     start_hp: 4,
                     items_per_load: 4,
                     heal_cut_at: None,
-                    item_bag: vec![
-                        Item::Loupe,
-                        Item::Pipe,
-                        Item::Flask,
-                        Item::Shackle,
-                        Item::Hacksaw,
-                    ],
                 },
                 RoundConfig {
                     start_hp: 4,
                     items_per_load: 4,
                     heal_cut_at: None,
-                    item_bag: vec![
-                        Item::Loupe,
-                        Item::Pipe,
-                        Item::Flask,
-                        Item::Shackle,
-                        Item::Hacksaw,
-                    ],
                 },
                 RoundConfig {
                     start_hp: 4,
                     items_per_load: 4,
                     heal_cut_at: Some(2),
-                    item_bag: vec![
-                        Item::Loupe,
-                        Item::Pipe,
-                        Item::Flask,
-                        Item::Shackle,
-                        Item::Hacksaw,
-                        Item::Ticker,
-                        Item::Magnet,
-                        Item::Lockpick,
-                        Item::Tincture,
-                    ],
                 },
             ],
             turn_ms: 45_000,
@@ -147,9 +119,6 @@ impl Config {
             }
             if r.items_per_load > self.max_items {
                 return Err("items_per_load cannot exceed max_items");
-            }
-            if r.items_per_load > 0 && r.item_bag.is_empty() {
-                return Err("item_bag cannot be empty when items_per_load > 0");
             }
         }
         if self.tincture_good_pct > 100 {
@@ -216,13 +185,6 @@ mod tests {
                 start_hp: 4,
                 items_per_load: 4,
                 heal_cut_at: None,
-                item_bag: vec![
-                    Item::Loupe,
-                    Item::Pipe,
-                    Item::Flask,
-                    Item::Shackle,
-                    Item::Hacksaw,
-                ],
             }
         );
         assert_eq!(
@@ -231,13 +193,6 @@ mod tests {
                 start_hp: 4,
                 items_per_load: 4,
                 heal_cut_at: None,
-                item_bag: vec![
-                    Item::Loupe,
-                    Item::Pipe,
-                    Item::Flask,
-                    Item::Shackle,
-                    Item::Hacksaw,
-                ],
             }
         );
         assert_eq!(
@@ -246,17 +201,6 @@ mod tests {
                 start_hp: 4,
                 items_per_load: 4,
                 heal_cut_at: Some(2),
-                item_bag: vec![
-                    Item::Loupe,
-                    Item::Pipe,
-                    Item::Flask,
-                    Item::Shackle,
-                    Item::Hacksaw,
-                    Item::Ticker,
-                    Item::Magnet,
-                    Item::Lockpick,
-                    Item::Tincture,
-                ],
             }
         );
         assert_eq!(c.turn_ms, 45_000);
@@ -372,10 +316,6 @@ mod tests {
         ok_fixed.min_live = 5;
         ok_fixed.max_live = 5;
         assert!(ok_fixed.check().is_ok());
-
-        let mut bad = Config::default();
-        bad.rounds[1].item_bag.clear();
-        assert_eq!(bad.check(), Err("item_bag cannot be empty when items_per_load > 0"));
 
         let mut bad = Config::default();
         bad.copies_per_item = 0;

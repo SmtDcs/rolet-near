@@ -88,9 +88,9 @@ if [[ "$USE_DEFAULT_CONFIG" == "1" ]]; then
   "max_live": 6,
   "copies_per_item": 4,
   "rounds": [
-    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null, "item_bag": ["Loupe", "Pipe", "Flask", "Shackle", "Hacksaw"]},
-    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null, "item_bag": ["Loupe", "Pipe", "Flask", "Shackle", "Hacksaw"]},
-    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": 2, "item_bag": ["Loupe", "Pipe", "Flask", "Shackle", "Hacksaw", "Ticker", "Magnet", "Lockpick", "Tincture"]}
+    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null},
+    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null},
+    {"start_hp": 4, "items_per_load": 4, "heal_cut_at": 2}
   ]
 }
 JSON

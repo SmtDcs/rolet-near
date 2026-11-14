@@ -395,14 +395,6 @@ pub fn new_load(cfg: &Config, src: &mut dyn ShellSource) -> Load {
     Load::new(live, blank)
 }
 
-/// `Config::rounds` içinden ilgili round'un eşya torbasını döner (FIX-12).
-pub fn item_bag<'a>(cfg: &'a Config, round: u8) -> &'a [Item] {
-    cfg.rounds
-        .get(round.saturating_sub(1) as usize)
-        .map(|r| r.item_bag.as_slice())
-        .unwrap_or(&[])
-}
-
 /// Ortak eşya destesinden (9 tür × `cfg.copies_per_item`) iadesiz olarak her
 /// tarafa `items_per_load` kart dağıtır (R1 dahil her round 4 eşya). Tür seçimi
 /// dağıtım anında `ChainSource::roll` ile kalan kart sayılarına göre ağırlıklı
@@ -957,7 +949,7 @@ mod tests {
         }
     }
 
-    /// T-103: slot dolu iken fazlası düşer (`max_items = 4`); yalnız yer açılan oyuncuya aksiyon üretilir.
+    /// T-103: el dolu iken boş slot kadar dağıtılır (`max_items = 4`), çekilmeyen kart destede kalır; yalnız yer açılan oyuncuya aksiyon üretilir.
     #[test]
     fn deal_items_drops_extras_when_slots_full() {
         let cfg = Config::default();

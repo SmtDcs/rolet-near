@@ -57,7 +57,7 @@ Bağımlılık gösterimi: `← T-xxx` = önce o bitmeli.
 
 ### T-103 · Yükleme ve eşya dağıtımı · P0 · ← T-102
 - `new_load(round, src)`: DESIGN §4.6 algoritması (total 2–8, R1'de ≤4, dolu ∈ [1, total−1]).
-- `deal_items(state, src)`: round'a göre adet ve torba (R2: orijinal beşli + Ticker, R3: hepsi); 8 slot sınırı.
+- `deal_items(state, src)`: EK2 ortak deste (R1 dahil tüm round'larda 9 tür × 4 = 36 kartlık ortak desteden iadesiz dağıtım, biterse yenilenir); 4 slot (`Config.max_items`) sınırı.
 - Testler: 10 000 rastgele tohumla sınırlar asla aşılmıyor (deterministik test RNG'si); slot dolu iken fazlası düşüyor.
 - Bitti: testler yeşil.
 
@@ -98,7 +98,7 @@ Bağımlılık gösterimi: `← T-xxx` = önce o bitmeli.
 - Bitti: testler yeşil.
 
 ### T-111 · reveal ve maç başlangıcı · P0 · ← T-110
-- `reveal(match_id, secret)`: commit kontrolü; ikinci reveal → `match_seed`, ilk sıra, R1 yüklemesi (eşyasız), `deadline_ms`, status Active, `Action::LoadStarted`.
+- `reveal(match_id, secret)`: commit kontrolü; ikinci reveal → `match_seed`, ilk sıra, R1 yüklemesi + 4+4 eşya dağıtımı (EK2), `deadline_ms`, status Active, `Action::LoadStarted` + `Action::ItemsDealt`.
 - Testler: yanlış secret reddi; tekrar reveal reddi; iki reveal → Active, hp = R1 canı.
 - Bitti: testler yeşil.
 

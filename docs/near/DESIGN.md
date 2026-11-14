@@ -56,7 +56,7 @@ Mike Klubnika'nın 2023'te itch.io'da yayınladığı, 2024'te Steam'e (Critical
 1. Dealer fişekleri masaya dizer: **dolu (kırmızı)** ve **boş/kuru sıkı (mavi-gri)** fişekler karışık sırada, sayıları açıkça görülecek şekilde. Ekranda örn. "2 LIVE, 3 BLANK" bilgisi okunur.
 2. Fişekler toplanır ve pompalı tüfeğe **gizli sırayla** yüklenir. Oyuncu sıralamayı bilmez, sadece toplam sayıları bilir.
 3. Toplam fişek sayısı 2–8 arası, en az 1 dolu ve 1 boş. **[Buckshot referansı — Rolet'te 8 gözlü, `min_live..=max_live` (varsayılan `2..=6`), bkz. §3.1 ve `DECISIONS.md` #10]**
-4. Round 2 ve 3'te her yüklemede iki tarafa da eşya dağıtılır: masada bir kutu açılır, oyuncu eşyaları teker teker alıp kendi tarafındaki 8 slotluk ızgaraya yerleştirir. **[EMİN DEĞİLİM: yükleme başına 2 (R2) / 4 (R3) eşya]** Izgara doluysa fazla eşya alınamaz.
+4. Round 2 ve 3'te (Buckshot referansı; Rolet'te R1 dahil her yüklemede, bkz. §3.1) iki tarafa da eşya dağıtılır: masada bir kutu açılır, oyuncu eşyaları teker teker alıp kendi tarafındaki ızgaraya yerleştirir (Buckshot'ta 2/4 eşya ve daha geniş ızgara; Rolet'te her round 4 eşya ve 4 slot, bkz. §3.1). Izgara doluysa boş slot kadar alınır.
 5. Tüfekteki fişekler bitince yeni yükleme yapılır (1. adıma dön). Round, bir tarafın canı bitene kadar sürer.
 
 ### 2.3 Bir hamle
@@ -91,7 +91,7 @@ Sonradan eklenenler ("Double or Nothing" güncellemesi):
 | Son kullanma tarihi geçmiş ilaç | Şans: %50 ihtimalle +2 can, aksi halde −1 can (öldürebilir) (`Config.tincture_good_pct`, varsayılan 50). |
 
 ### 2.5 Round'a özel kurallar
-- **Round 1:** eşya yok, düşük can, saf şans + boşla-kendine-ateş kararı.
+- **Round 1 (Buckshot hikâye referansı):** Buckshot hikâye modunda başlangıçta eşya dağıtılmaz, düşük can ve saf şans + boşla-kendine-ateş kararı vardır (Rolet'te R1 dahil tüm round'lar 4 can ve 4 eşya ile oynanır; bkz. §3.1 ve `DECISIONS.md` #10).
 - **Round 2:** eşyalar devreye girer.
 - **Round 3:** can belirli eşiğin altına düşünce (≈2) "teller kesilir"; o noktadan sonra sigara/ilaç ile iyileşme yapılamaz, ölüm kalıcıdır. **[EMİN DEĞİLİM: eşik ve hangi eşyaları etkilediği]**
 - Kazanma: üç round'u sağ bitirmek. Kaybetme: canın biter. **[EMİN DEĞİLİM: R1/R2'de ölünce yeniden canlandırılma var mı]**
@@ -134,7 +134,7 @@ Parametreler (`Config` varsayılanları, Rolet değerleri):
 | 2 | 4 | 4 | yok |
 | 3 | 4 | 4 | can ≤ 2 olunca iyileşme kapalı (`heal_cut_at: Some(2)`) |
 
-- Eşya slotu: oyuncu başına 4 (`Config.max_items = 4`, UI ızgarası 4 slot). Dolu slot varsa dağıtımda fazla eşya düşer.
+- Eşya slotu: oyuncu başına 4 (`Config.max_items = 4`, UI ızgarası 4 slot). Dolu slota gelindiğinde yalnızca boş slot kadar çekilir; çekilmeyen kartlar ortak destede kalır.
 - Fişek yüklemesi: tabanca her zaman 8 gözlü (`Config.load_size = 8`); her yüklemede dolu sayısı `ChainSource` rastgeleliğiyle `Config.min_live..=Config.max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır. Seçilen `(live, blank)` sayıları yükleme anında açıkça duyurulur (`MatchView` + `LoadStarted`), sıra ise gizli kalır ve lazy draw ile çekilir (§4.6).
 - **[KARAR] Sıra kuralları:** R1'in ilk sırası rastgele. Yeni yüklemede sıra, kimde kaldıysa onda devam eder. Yeni round'u bir önceki round'u **kaybeden** başlatır.
 - **[KARAR] Hamle süresi:** 45 s. Süre biten oyuncuya karşı `claim_timeout` çağrılabilir → **maçı** kaybeder. (Buckshot'ta yok; zincirde terk eden oyuncuya karşı zorunlu.)
@@ -148,7 +148,7 @@ Parametreler (`Config` varsayılanları, Rolet değerleri):
 4. Kelepçe: rakip kelepçeliyse veya bu sıra zincirinde kelepçesi yeni kırıldıysa kullanılamaz. Sıra kelepçeli oyuncuya geçecekken o sıra atlanır ve kelepçe kırılır; sıra tekrar kullanana döner.
 5. Boşla kendine ateş edince sıra kalır; kelepçe/testere durumları değişmez (testere hariç: atış yapıldığı için sıfırlanır).
 6. Can 0 → round biter. Round bitince tüm eşyalar, testere, kelepçe sıfırlanır; yeni round yeni canlarla ve yeni yüklemeyle başlar.
-7. Fişek bitince yeni yükleme + (R2/R3'te) eşya dağıtımı; yeni yükte kelepçe kalkar.
+7. Fişek bitince yeni yükleme + eşya dağıtımı (R1 dahil); yeni yükte kelepçe kalkar.
 8. Eşya etkileri §2.4 tablosuyla birebir. Belirsiz oranlar (`ilaç`) kontrat sabiti olarak tanımlanır.
 9. Rakibin eşyasını çalma (adrenalin karşılığı): hedef slot seçilir, eşya rakipten silinir ve **hemen** çalan adına uygulanır. Çalınan eşya bu sırada uygulanamazsa (ör. rakip zaten kelepçeli) işlem reddedilir ve hiçbir şey tüketilmez.
 
@@ -390,7 +390,7 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 Yükleme sayısı üretimi (`Config`'ten ayarlanabilir, Rolet varsayılanları):
 Tabanca her zaman `load_size` gözlüdür (varsayılan `8`); her yüklemede dolu sayısı `ChainSource` ile `min_live..=max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır (`blank = load_size - live`). Seçilen sayılar `MatchView` ve `Action::LoadStarted` üzerinden iki oyuncuya açıkça duyurulur; sıra ise gizli kalır ve atış/eşya anında lazy draw ile çekilir.
 
-Eşya dağıtımı (EK2 — ortak deste): Maç başında 9 eşya türünün her birinden `Config.copies_per_item` (varsayılan `4`, toplam `36` kart) kopya içeren ortak bir deste (`GameState.deck_counts: [u8; 9]`) oluşturulur. R1 dahil her round ve yüklemede ellere bu ortak desteden `items_per_load` (varsayılan `4`) kart **iadesiz** dağıtılır; çekilecek tür dağıtım anında `ChainSource` ile kalan kart sayıları oranında seçilir, deste biterse `[copies_per_item; 9]` olarak yeniden doldurulur, slot dolunca (4 eşya) fazla kart düşer. Kalan deste sayısı `get_deck_remaining` ve `MatchView.deck_remaining` ile görülebilir. (Eski `Config::rounds[r].item_bag` alanı yapı uyumluluğu için korunur, aktif dağıtımda ortak deste kullanılır.)
+Eşya dağıtımı (EK2 — ortak deste): Maç başında 9 eşya türünün her birinden `Config.copies_per_item` (varsayılan `4`, toplam `36` kart) kopya içeren ortak bir deste (`GameState.deck_counts: [u8; 9]`) oluşturulur. R1 dahil her round ve yüklemede ellere bu ortak desteden `items_per_load` (varsayılan `4`) kart **iadesiz** dağıtılır; çekilecek tür dağıtım anında `ChainSource` ile kalan kart sayıları oranında seçilir, deste biterse `[copies_per_item; 9]` olarak yeniden doldurulur. El doluysa (4 eşya, `Config.max_items`) yalnızca boş slot kadar kart çekilir; çekilmeyen kartlar ortak destede kalır. Kalan deste sayısı `get_deck_remaining` ve `MatchView.deck_remaining` ile görülebilir (`RoundConfig.item_bag` FIX-F2-3 ile kaldırılmıştır).
 
 ### 4.7 Kontrat metodları
 
