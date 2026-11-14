@@ -82,6 +82,7 @@ function LockedPlate({ still }: { still: boolean }) {
   const { size, camera } = useThree();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability -- three.js texture config
     plate.colorSpace = THREE.SRGBColorSpace;
     plate.anisotropy = 4;
     plate.needsUpdate = true;

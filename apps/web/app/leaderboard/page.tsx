@@ -24,7 +24,7 @@ export default function LeaderboardPage() {
       const data = await leaderboard(0, 50);
       setRows(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sıralama alınamadı");
+      setError(err instanceof Error ? err.message : "Could not load leaderboard");
     } finally {
       setLoading(false);
     }
@@ -39,7 +39,7 @@ export default function LeaderboardPage() {
       })
       .catch((err) => {
         if (active) {
-          setError(err instanceof Error ? err.message : "Sıralama alınamadı");
+          setError(err instanceof Error ? err.message : "Could not load leaderboard");
         }
       });
     return () => {
@@ -54,10 +54,10 @@ export default function LeaderboardPage() {
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-[#242424] pb-4">
           <div>
             <p className="font-mono text-[11px] tracking-[0.2em] text-[#c6a15b] uppercase">
-              NEAR Testnet · Zincir Üstü Skorlar
+              NEAR Testnet · On-Chain Scores
             </p>
             <h1 className="font-display text-3xl tracking-wide text-[#f0ede6] uppercase">
-              Sıralama
+              Leaderboard
             </h1>
           </div>
           <div className="flex items-center gap-3 font-mono text-xs">
@@ -67,20 +67,20 @@ export default function LeaderboardPage() {
               onClick={() => void load()}
               className="cursor-pointer border border-[#3a3a3a] px-3 py-1.5 text-[#9a9a9a] uppercase hover:text-[#eaeaea]"
             >
-              {loading ? "YÜKLENİYOR..." : "Yenile"}
+              {loading ? "LOADING..." : "Refresh"}
             </button>
             <Link
               href="/duel"
               className="border border-[#c6a15b] bg-[#c6a15b] px-4 py-1.5 font-bold text-[#090909] uppercase hover:bg-[#e5c378]"
             >
-              Düelloya Gir
+              Enter Duel
             </Link>
           </div>
         </header>
 
         {!config.contractId ? (
           <div className="border border-[#242424] bg-[#0e0d0b] p-6 font-mono text-xs text-[#8f897e]">
-            Sözleşme adresi (`NEXT_PUBLIC_ROLET_CONTRACT`) tanımlandığında sıralama zincirden okunur.
+            The leaderboard is read from chain once a contract address (`NEXT_PUBLIC_ROLET_CONTRACT`) is set.
           </div>
         ) : error ? (
           <div className="border border-[#e61919]/60 bg-[#2a0909]/60 p-4 font-mono text-xs text-[#ff8080]">
@@ -88,7 +88,7 @@ export default function LeaderboardPage() {
           </div>
         ) : rows.length === 0 && !loading ? (
           <div className="border border-[#242424] bg-[#0e0d0b] p-6 font-mono text-xs text-[#8f897e]">
-            Henüz tamamlanmış düello kaydı bulunmuyor.
+            No completed duels yet.
           </div>
         ) : (
           <div className="overflow-x-auto border border-[#242424] bg-[#0e0d0b]">
@@ -96,11 +96,11 @@ export default function LeaderboardPage() {
               <thead>
                 <tr className="border-b border-[#242424] bg-[#12100d] text-[#8f897e] uppercase">
                   <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">Hesap</th>
-                  <th className="px-4 py-3 text-right">Kazanma</th>
-                  <th className="px-4 py-3 text-right">Kaybetme</th>
-                  <th className="px-4 py-3 text-right">Maç</th>
-                  <th className="px-4 py-3 text-right">Oran</th>
+                  <th className="px-4 py-3">Account</th>
+                  <th className="px-4 py-3 text-right">Wins</th>
+                  <th className="px-4 py-3 text-right">Losses</th>
+                  <th className="px-4 py-3 text-right">Matches</th>
+                  <th className="px-4 py-3 text-right">Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -119,7 +119,7 @@ export default function LeaderboardPage() {
                     >
                       <td className="px-4 py-3 text-[#8f897e]">{idx + 1}</td>
                       <td className="px-4 py-3 font-bold">
-                        {row.account_id} {isYou ? "(SEN)" : ""}
+                        {row.account_id} {isYou ? "(YOU)" : ""}
                       </td>
                       <td className="px-4 py-3 text-right text-[#52c41a]">
                         {row.wins}

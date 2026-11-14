@@ -20,6 +20,7 @@ export type NearEnvInput = {
 
 export const DEFAULT_NEAR_NETWORK: NearNetworkId = "testnet";
 export const DEFAULT_NEAR_RPC_URL = "https://rpc.testnet.near.org";
+export const DEFAULT_ROLET_CONTRACT = "rolet.rolet-hk-o2611150055.testnet";
 
 /**
  * Methods allowed on the browser FunctionCall access key (must match contract F2 rules).
@@ -85,10 +86,12 @@ export function readNearConfig(env?: NearEnvInput): NearConfig {
     : process.env.NEXT_PUBLIC_NEAR_RPC_URL ?? process.env.NEXT_PUBLIC_NEAR_RPC;
 
   const rpcUrl = (rpcRaw ?? "").trim() || DEFAULT_NEAR_RPC_URL;
-  const contractId = (contractRaw ?? "").trim();
+  const networkId = normalizeNetwork(networkRaw?.trim());
+  const contractId =
+    (contractRaw ?? "").trim() || (networkId === "testnet" && !env ? DEFAULT_ROLET_CONTRACT : "");
 
   return {
-    networkId: normalizeNetwork(networkRaw?.trim()),
+    networkId,
     contractId,
     rpcUrl,
   };

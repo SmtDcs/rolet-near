@@ -36,7 +36,7 @@ function Lane({
       >
         {track.map((item, i) => (
           <span key={`${item}-${i}`} className="label whitespace-nowrap">
-            <span className="text-[var(--color-brass-dim)]">///</span> {item}
+            <span className="text-[var(--color-brass-dim)]">{"///"}</span> {item}
           </span>
         ))}
       </div>

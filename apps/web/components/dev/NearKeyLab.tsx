@@ -552,7 +552,7 @@ export function NearKeyLab() {
         </label>
       </header>
 
-      {/* 1. Bağlan / çık */}
+      {/* 1. Connect / sign out */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4">
         <h2 className="font-bold text-slate-100">1. Connect / Sign Out (MNW & Meteor)</h2>
         <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -579,7 +579,7 @@ export function NearKeyLab() {
         </div>
       </section>
 
-      {/* 2. Key durumu */}
+      {/* 2. Key status */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="font-bold text-slate-100">2. Key Status</h2>
@@ -602,7 +602,7 @@ export function NearKeyLab() {
         </div>
       </section>
 
-      {/* 3. signIn(methodNames) ve Yedek AddKey */}
+      {/* 3. signIn(methodNames) and fallback AddKey */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
         <h2 className="font-bold text-slate-100">3. Obtaining an FC Key</h2>
         <div className="flex flex-wrap gap-3">
@@ -649,7 +649,7 @@ export function NearKeyLab() {
         </div>
       </section>
 
-      {/* 5 & 6. Maç alanları, join -> cancel, join, reveal, fire */}
+      {/* 5 & 6. Match fields, join -> cancel, join, reveal, fire */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-3">
         <h2 className="font-bold text-slate-100">5 & 6. Match Calls with FC Key</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -744,7 +744,7 @@ export function NearKeyLab() {
         )}
       </section>
 
-      {/* 7. Ölç */}
+      {/* 7. Measure */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
         <h2 className="font-bold text-slate-100">7. Allowance Drop Measurement</h2>
         <button
@@ -764,7 +764,7 @@ export function NearKeyLab() {
         )}
       </section>
 
-      {/* Günlük */}
+      {/* Log */}
       <section className="rounded border border-slate-800 bg-slate-950 p-4">
         <h2 className="font-bold text-slate-300">Transaction Log</h2>
         <ul className="mt-2 space-y-1 text-xs text-slate-400">

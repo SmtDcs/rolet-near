@@ -173,7 +173,7 @@ function DuelClient() {
         if (!active) return;
         dispatch({
           type: "ERROR",
-          message: err instanceof Error ? err.message : "NEAR durumu okunamadı",
+          message: err instanceof Error ? err.message : "Could not read NEAR state",
         });
       }
     })();
@@ -303,7 +303,7 @@ function DuelClient() {
         autoRevealLockRef.current = null;
         dispatch({
           type: "ERROR",
-          message: err instanceof Error ? err.message : "Reveal işlemi başarısız",
+          message: err instanceof Error ? err.message : "Reveal failed",
           recoverableStep: "reveal",
         });
       }
@@ -408,7 +408,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Oyun anahtarı oluşturulamadı",
+        message: err instanceof Error ? err.message : "Could not create game key",
         recoverableStep: "key",
       });
     } finally {
@@ -429,7 +429,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Karakter satın alınamadı",
+        message: err instanceof Error ? err.message : "Could not buy character",
         recoverableStep: "character",
       });
     } finally {
@@ -453,7 +453,7 @@ function DuelClient() {
     try {
       const wallet = await selector.wallet();
       if (!wallet.signMessage) {
-        throw new Error("Bu cüzdan NEP-413 mesaj imzalamayı desteklemiyor");
+        throw new Error("This wallet does not support NEP-413 message signing");
       }
       const nonceBytes = new Uint8Array(32);
       crypto.getRandomValues(nonceBytes);
@@ -469,7 +469,7 @@ function DuelClient() {
       });
 
       if (!signed) {
-        throw new Error("İmza yanıtı alınamadı");
+        throw new Error("No signature response received");
       }
 
       const res = await fetch("/api/matchmaking", {
@@ -493,7 +493,7 @@ function DuelClient() {
         error?: string;
       };
       if (!res.ok || !data.ok || !data.view) {
-        throw new Error(data.error ?? "Sıraya girilemedi");
+        throw new Error(data.error ?? "Could not enter queue");
       }
 
       if (data.view.status === "paired") {
@@ -509,7 +509,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Eşleşme sırası hatası",
+        message: err instanceof Error ? err.message : "Matchmaking queue error",
         recoverableStep: "queue",
       });
     } finally {
@@ -542,7 +542,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Maça katılım başarısız",
+        message: err instanceof Error ? err.message : "Failed to join match",
         recoverableStep: "join",
       });
     } finally {
@@ -559,7 +559,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Maç iptal edilemedi",
+        message: err instanceof Error ? err.message : "Could not cancel match",
         recoverableStep: "join",
       });
     } finally {
@@ -588,7 +588,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Zaman aşımı talebi başarısız",
+        message: err instanceof Error ? err.message : "Timeout claim failed",
         recoverableStep: flow.step === "reveal" ? "reveal" : "play",
       });
     } finally {
@@ -604,7 +604,7 @@ function DuelClient() {
     } catch (err) {
       dispatch({
         type: "ERROR",
-        message: err instanceof Error ? err.message : "Ödül çekilemedi",
+        message: err instanceof Error ? err.message : "Could not claim reward",
         recoverableStep: flow.step,
       });
     } finally {
@@ -650,9 +650,9 @@ function DuelClient() {
               ← ROLET
             </Link>
             <span className="font-bold tracking-[0.14em] text-[#eaeaea] uppercase">
-              DÜELLO #{flow.matchId}
+              DUEL #{flow.matchId}
             </span>
-            <span className="text-[#9a9a9a]">RAKİP: {flow.opponent}</span>
+            <span className="text-[#9a9a9a]">OPPONENT: {flow.opponent}</span>
           </div>
           {flow.claimSuggested && (
             <button
@@ -661,7 +661,7 @@ function DuelClient() {
               onClick={handleClaimReward}
               className="cursor-pointer border border-[#c6a15b] bg-[#2a1f10] px-3 py-1 text-[11px] text-[#e5c378] uppercase"
             >
-              ÖDÜL AL ({formatYoctoNear(flow.owedYocto)})
+              CLAIM REWARD ({formatYoctoNear(flow.owedYocto)})
             </button>
           )}
         </header>
@@ -690,17 +690,17 @@ function DuelClient() {
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#242424] pb-4">
           <div>
             <p className="font-mono text-[11px] tracking-[0.2em] text-[#c6a15b] uppercase">
-              NEAR Testnet · Zincir Üstü Düello
+              NEAR Testnet · On-Chain Duel
             </p>
             <h1 className="font-display text-3xl tracking-wide text-[#f0ede6] uppercase">
-              Masa Düellosu
+              Table Duel
             </h1>
           </div>
           <Link
             href="/practice"
             className="border border-[#3a3a3a] px-3 py-1.5 font-mono text-xs text-[#c6a15b] uppercase hover:border-[#c6a15b]"
           >
-            Cüzdansız Pratik
+            Practice Without Wallet
           </Link>
         </header>
 
@@ -708,10 +708,10 @@ function DuelClient() {
           <div className="flex flex-wrap items-center justify-between gap-3 border border-[#c6a15b]/60 bg-[#1c160d] p-4 font-mono text-xs">
             <div>
               <span className="font-bold text-[#e5c378]">
-                ÇEKİLEBİLİR ÖDÜL: {formatYoctoNear(flow.owedYocto)}
+                CLAIMABLE REWARD: {formatYoctoNear(flow.owedYocto)}
               </span>
               <p className="mt-1 text-[#b8b1a3]">
-                Önceki maçlarından biriken ödülün sözleşmede bekliyor. Cüzdan onayıyla çekebilirsin.
+                Your reward from previous matches is waiting in the contract. Claim it with wallet approval.
               </p>
             </div>
             <button
@@ -720,7 +720,7 @@ function DuelClient() {
               onClick={handleClaimReward}
               className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-4 py-2 font-bold text-[#090909] uppercase hover:bg-[#e5c378] disabled:opacity-50"
             >
-              {actionBusy ? "ONAYLANIYOR..." : "Ödülü Çek (claim_reward)"}
+              {actionBusy ? "CONFIRMING..." : "Claim Reward (claim_reward)"}
             </button>
           </div>
         )}
@@ -729,14 +729,14 @@ function DuelClient() {
           {flow.step === "connect" && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-sm text-[#b8b1a3]">
-                1 / 6 — Düelloya katılmak için NEAR cüzdanını bağla.
+                1 / 6 — Connect your NEAR wallet to join the duel.
               </p>
               <button
                 type="button"
                 onClick={connect}
                 className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-5 py-2.5 text-xs font-bold tracking-[0.14em] text-[#090909] uppercase hover:bg-[#e5c378]"
               >
-                NEAR Cüzdan Bağla
+                Connect NEAR Wallet
               </button>
             </div>
           )}
@@ -744,10 +744,10 @@ function DuelClient() {
           {flow.step === "key" && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-sm text-[#f0ede6]">
-                2 / 6 — Maç içi hamleleri pop-up olmadan göndermek için kısıtlı oyun anahtarı ekle.
+                2 / 6 — Add a restricted game key to send in-match moves without pop-ups.
               </p>
               <p className="text-xs text-[#8f897e]">
-                Yalnızca join, reveal, cancel, fire, use_item ve claim_timeout metotlarına izin verilir (0.25 NEAR gas izni).
+                Only the join, reveal, cancel, fire, use_item and claim_timeout methods are allowed (0.25 NEAR gas allowance).
               </p>
               <button
                 type="button"
@@ -755,7 +755,7 @@ function DuelClient() {
                 onClick={handleEnsureKey}
                 className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-5 py-2.5 text-xs font-bold tracking-[0.14em] text-[#090909] uppercase hover:bg-[#e5c378] disabled:opacity-50"
               >
-                {actionBusy ? "EKLENİYOR..." : "Oyun Anahtarı Oluştur"}
+                {actionBusy ? "ADDING..." : "Create Game Key"}
               </button>
             </div>
           )}
@@ -764,7 +764,7 @@ function DuelClient() {
             <div className="flex flex-col gap-5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm text-[#f0ede6]">
-                  3 / 6 — Düelloda kullanacağın karakter NFT&apos;sini seç.
+                  3 / 6 — Pick the character NFT to use in the duel.
                 </p>
                 <button
                   type="button"
@@ -772,18 +772,18 @@ function DuelClient() {
                   onClick={handleRefreshChars}
                   className="cursor-pointer border border-[#3a3a3a] px-3 py-1 text-[11px] text-[#9a9a9a] uppercase hover:text-[#eaeaea]"
                 >
-                  {charsLoading ? "..." : "Yenile"}
+                  {charsLoading ? "..." : "Refresh"}
                 </button>
               </div>
 
               {characters.length === 0 ? (
                 <div className="flex flex-col items-start gap-3 border border-[#2a241c] bg-[#12100d] p-4">
                   <p className="text-xs text-[#b8b1a3]">
-                    Hesabında karakter NFT bulunmuyor. Buradan satın alabilir veya{" "}
+                    You have no character NFTs yet. Buy one here or open the{" "}
                     <Link href="/profile" className="text-[#c6a15b] underline">
-                      Karakterler sayfasını
-                    </Link>{" "}
-                    açabilirsin.
+                      Characters page
+                    </Link>
+                    .
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     {(["Kuleci", "Ayarci", "Kacak"] as const).map((k) => (
@@ -806,7 +806,7 @@ function DuelClient() {
                       onClick={handleMintCharacter}
                       className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-4 py-1.5 text-xs font-bold text-[#090909] uppercase disabled:opacity-50"
                     >
-                      {actionBusy ? "SATIN ALINIYOR..." : `${mintKind} Satın Al (1 NEAR)`}
+                      {actionBusy ? "BUYING..." : `${mintKind} Buy (1 NEAR)`}
                     </button>
                   </div>
                 </div>
@@ -834,15 +834,15 @@ function DuelClient() {
                         }`}
                       >
                         <span className="font-bold text-[#e5c378]">
-                          #{ch.token_id} · {ch.state?.kind ?? "Karakter"}
+                          #{ch.token_id} · {ch.state?.kind ?? "Character"}
                         </span>
                         <span className="text-[#9a9a9a]">
-                          Dayanıklılık: {ch.state?.durability ?? "?"}
+                          Durability: {ch.state?.durability ?? "?"}
                         </span>
                         {ch.state?.locked_in !== null &&
                           ch.state?.locked_in !== undefined && (
                             <span className="text-[#e61919]">
-                              Maçta kilitli (#{ch.state.locked_in})
+                              Locked in match (#{ch.state.locked_in})
                             </span>
                           )}
                       </button>
@@ -856,19 +856,19 @@ function DuelClient() {
           {flow.step === "queue" && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-sm text-[#f0ede6]">
-                4 / 6 — Seçili karakter: #{flow.selectedTokenId}. Rakip bulmak için eşleşme sırasına gir.
+                4 / 6 — Selected character: #{flow.selectedTokenId}. Join the queue to find an opponent.
               </p>
               {queueWaiting ? (
                 <div className="flex flex-wrap items-center gap-4">
                   <span className="border border-[#c6a15b]/50 bg-[#1c160d] px-3 py-2 text-xs text-[#e5c378]">
-                    RAKİP BEKLENİYOR (NEP-413 İMZALI OTURUM AKTİF)...
+                    WAITING FOR OPPONENT (NEP-413 SIGNED SESSION ACTIVE)...
                   </span>
                   <button
                     type="button"
                     onClick={handleLeaveQueue}
                     className="cursor-pointer border border-[#e61919]/60 px-4 py-2 text-xs text-[#ff8080] uppercase"
                   >
-                    Sıradan Çık
+                    Leave Queue
                   </button>
                 </div>
               ) : (
@@ -879,7 +879,7 @@ function DuelClient() {
                     onClick={handleEnterQueue}
                     className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-5 py-2.5 text-xs font-bold tracking-[0.14em] text-[#090909] uppercase hover:bg-[#e5c378] disabled:opacity-50"
                   >
-                    {actionBusy ? "İMZALANIYOR..." : "Eşleşme Sırasına Gir"}
+                    {actionBusy ? "SIGNING..." : "Join Matchmaking Queue"}
                   </button>
                   <button
                     type="button"
@@ -888,7 +888,7 @@ function DuelClient() {
                     }
                     className="cursor-pointer border border-[#3a3a3a] px-4 py-2.5 text-xs text-[#9a9a9a] uppercase"
                   >
-                    Karakter Değiştir
+                    Change Character
                   </button>
                 </div>
               )}
@@ -898,10 +898,10 @@ function DuelClient() {
           {flow.step === "join" && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-sm text-[#f0ede6]">
-                5 / 6 — Eşleşme #{flow.matchId} · Rakip: {flow.opponent}
+                5 / 6 — Match #{flow.matchId} · Opponent: {flow.opponent}
               </p>
               <p className="text-xs text-[#9a9a9a]">
-                Gizli tohum taahhüdün (commit) tarayıcı oturumunda güvenle saklanır.
+                Your hidden seed commitment is stored safely in the browser session.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -911,10 +911,10 @@ function DuelClient() {
                   className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-5 py-2.5 text-xs font-bold text-[#090909] uppercase disabled:opacity-50"
                 >
                   {flow.committed
-                    ? "RAKİP KATILIMI BEKLENİYOR..."
+                    ? "WAITING FOR OPPONENT TO JOIN..."
                     : actionBusy
-                      ? "GÖNDERİLİYOR..."
-                      : "Maça Katıl (Join)"}
+                      ? "SENDING..."
+                      : "Join Match (Join)"}
                 </button>
                 <button
                   type="button"
@@ -922,7 +922,7 @@ function DuelClient() {
                   onClick={handleCancelMatch}
                   className="cursor-pointer border border-[#e61919]/60 px-4 py-2.5 text-xs text-[#ff8080] uppercase"
                 >
-                  İptal Et
+                  Cancel
                 </button>
               </div>
             </div>
@@ -931,12 +931,12 @@ function DuelClient() {
           {flow.step === "reveal" && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-sm text-[#f0ede6]">
-                6 / 6 — Tohum Açıklama (Reveal) · Maç #{flow.matchId}
+                6 / 6 — Seed Reveal · Match #{flow.matchId}
               </p>
               <p className="text-xs text-[#b8b1a3]">
                 {flow.you !== null && flow.revealed[flow.you]
-                  ? "Tohumun açıklandı, rakibin açıklaması bekleniyor..."
-                  : "Taahhüt edilen gizli tohum otomatik açıklanıyor..."}
+                  ? "Your seed is revealed; waiting for your opponent..."
+                  : "Revealing the committed seed automatically..."}
               </p>
               {canClaimRevealTo && (
                 <button
@@ -945,7 +945,7 @@ function DuelClient() {
                   onClick={handleClaimTimeout}
                   className="cursor-pointer border border-[#e61919] bg-[#3b0b0b] px-4 py-2 text-xs font-bold text-[#ffd6d6] uppercase"
                 >
-                  {timeoutBusy ? "İŞLENİYOR..." : "Süre Doldu — İptal / Kazan"}
+                  {timeoutBusy ? "PROCESSING..." : "Time Up — Cancel / Win"}
                 </button>
               )}
             </div>
@@ -955,13 +955,13 @@ function DuelClient() {
             <div className="flex flex-col items-start gap-4">
               <h2 className="text-xl font-bold text-[#e5c378] uppercase">
                 {flow.cancelled
-                  ? "Maç İptal Edildi"
+                  ? "Match Cancelled"
                   : flow.you !== null && flow.winner === flow.you
-                    ? "Kazandın!"
-                    : "Maç Tamamlandı"}
+                    ? "You Won!"
+                    : "Match Complete"}
               </h2>
               <p className="text-xs text-[#b8b1a3]">
-                Maç #{flow.matchId} · Rakip: {flow.opponent ?? "-"}
+                Match #{flow.matchId} · Opponent: {flow.opponent ?? "-"}
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 {flow.claimSuggested && (
@@ -971,7 +971,7 @@ function DuelClient() {
                     onClick={handleClaimReward}
                     className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-5 py-2.5 text-xs font-bold text-[#090909] uppercase"
                   >
-                    Ödülü Çek ({formatYoctoNear(flow.owedYocto)})
+                    Claim Reward ({formatYoctoNear(flow.owedYocto)})
                   </button>
                 )}
                 <button
@@ -979,7 +979,7 @@ function DuelClient() {
                   onClick={() => dispatch({ type: "RESET" })}
                   className="cursor-pointer border border-[#c6a15b] px-5 py-2.5 text-xs text-[#c6a15b] uppercase"
                 >
-                  Yeni Düello Ara
+                  Find New Duel
                 </button>
               </div>
             </div>
@@ -988,7 +988,7 @@ function DuelClient() {
           {flow.step === "error" && (
             <div className="flex flex-col items-start gap-4">
               <p className="text-sm font-bold text-[#ff8080]">
-                Hata: {flow.error?.message ?? "Bilinmeyen hata"}
+                Error: {flow.error?.message ?? "Unknown error"}
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -996,14 +996,14 @@ function DuelClient() {
                   onClick={() => dispatch({ type: "RETRY" })}
                   className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-4 py-2 text-xs font-bold text-[#090909] uppercase"
                 >
-                  Tekrar Dene
+                  Try Again
                 </button>
                 <button
                   type="button"
                   onClick={() => dispatch({ type: "RESET" })}
                   className="cursor-pointer border border-[#3a3a3a] px-4 py-2 text-xs text-[#9a9a9a] uppercase"
                 >
-                  Sıraya Dön
+                  Back to Queue
                 </button>
               </div>
             </div>
@@ -1019,7 +1019,7 @@ export default function DuelPage() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center bg-[#070707] font-mono text-xs text-[#9a9a9a]">
-          YÜKLENİYOR...
+          LOADING...
         </div>
       }
     >

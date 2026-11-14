@@ -21,21 +21,21 @@ const CHARACTER_CATALOG: Array<{
 }> = [
   {
     kind: "Kuleci",
-    title: "Kuleci",
+    title: "Tower Keeper",
     subtitle: "The Warden",
-    description: "Demir siperlerin soğukkanlı nöbetçisi. On düello dayanıklılığı ile masaya oturur.",
+    description: "The unflappable sentry of the iron barricades. Sits down with ten duels of durability.",
   },
   {
     kind: "Ayarci",
-    title: "Ayarcı",
+    title: "Tuner",
     subtitle: "The Tinkerer",
-    description: "Horoz, tambur ve sürgü ustası. Sekiz hazneli silindirle hesaplı risk alır.",
+    description: "A master of hammer, cylinder and bolt. Takes calculated risks with an eight-chamber cylinder.",
   },
   {
     kind: "Kacak",
-    title: "Kaçak",
+    title: "Fugitive",
     subtitle: "The Smuggler",
-    description: "Gizli eşya takaslarının gölgedeki ismi. Sıra geldiğinde elini saklamayı bilir.",
+    description: "The shadow name behind covert item trades. Knows how to hide his hand when the time comes.",
   },
 ];
 
@@ -130,12 +130,12 @@ export default function ProfilePage() {
       const tokenId = await buyCharacter(kind, contractConfig?.price);
       setStatusMsg(
         tokenId
-          ? `${kind} karakteri basıldı (#${tokenId}).`
-          : `${kind} karakteri satın alındı.`,
+          ? `${kind} character minted (#${tokenId}).`
+          : `${kind} character purchased.`,
       );
       await refresh();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Satın alma başarısız");
+      setErrorMsg(err instanceof Error ? err.message : "Purchase failed");
     } finally {
       setBuyingKind(null);
     }
@@ -146,10 +146,10 @@ export default function ProfilePage() {
     setStatusMsg(null);
     try {
       await claimReward();
-      setStatusMsg("Ödül cüzdanına çekildi.");
+      setStatusMsg("Reward claimed to your wallet.");
       await refresh();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Ödül çekilemedi");
+      setErrorMsg(err instanceof Error ? err.message : "Could not claim reward");
     }
   };
 
@@ -170,10 +170,10 @@ export default function ProfilePage() {
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-[#242424] pb-4">
           <div>
             <p className="font-mono text-[11px] tracking-[0.2em] text-[#c6a15b] uppercase">
-              NEAR NFT Karakterler · NEP-171
+              NEAR NFT Characters · NEP-171
             </p>
             <h1 className="font-display text-3xl tracking-wide text-[#f0ede6] uppercase">
-              Karakter &amp; Profil
+              Character &amp; Profile
             </h1>
           </div>
           <div className="flex items-center gap-3 font-mono text-xs">
@@ -183,13 +183,13 @@ export default function ProfilePage() {
               onClick={() => void refresh()}
               className="cursor-pointer border border-[#3a3a3a] px-3 py-1.5 text-[#9a9a9a] uppercase hover:text-[#eaeaea]"
             >
-              {loading ? "YÜKLENİYOR..." : "Yenile"}
+              {loading ? "LOADING..." : "Refresh"}
             </button>
             <Link
               href="/duel"
               className="border border-[#c6a15b] bg-[#c6a15b] px-4 py-1.5 font-bold text-[#090909] uppercase hover:bg-[#e5c378]"
             >
-              Düelloya Gir
+              Enter Duel
             </Link>
           </div>
         </header>
@@ -197,32 +197,32 @@ export default function ProfilePage() {
         {!connected ? (
           <section className="flex flex-col items-start gap-4 border border-[#242424] bg-[#0e0d0b] p-6 font-mono">
             <p className="text-sm text-[#b8b1a3]">
-              Karakter satın almak ve sahip olduğun NFT&apos;leri görmek için NEAR cüzdanını bağla.
+              Connect your NEAR wallet to buy characters and see the NFTs you own.
             </p>
             <button
               type="button"
               onClick={connect}
               className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-5 py-2.5 text-xs font-bold text-[#090909] uppercase"
             >
-              NEAR Cüzdan Bağla
+              Connect NEAR Wallet
             </button>
           </section>
         ) : (
           <section className="grid gap-4 border border-[#242424] bg-[#0e0d0b] p-5 font-mono text-xs sm:grid-cols-4">
             <div>
-              <div className="text-[#8f897e] uppercase">Hesap</div>
+              <div className="text-[#8f897e] uppercase">Account</div>
               <div className="mt-1 truncate font-bold text-[#eaeaea]">
                 {accountId}
               </div>
             </div>
             <div>
-              <div className="text-[#8f897e] uppercase">Kazanma / Maç</div>
+              <div className="text-[#8f897e] uppercase">Wins / Matches</div>
               <div className="mt-1 font-bold text-[#e5c378]">
                 {player ? `${player.wins}G · ${player.losses}M (${player.played})` : "-"}
               </div>
             </div>
             <div>
-              <div className="text-[#8f897e] uppercase">Bekleyen Ödül</div>
+              <div className="text-[#8f897e] uppercase">Pending Reward</div>
               <div className="mt-1 font-bold text-[#52c41a]">
                 {player ? formatYoctoNear(player.owed) : "0.00 NEAR"}
               </div>
@@ -235,10 +235,10 @@ export default function ProfilePage() {
                   onClick={handleClaim}
                   className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-4 py-2 font-bold text-[#090909] uppercase hover:bg-[#e5c378] disabled:opacity-50"
                 >
-                  Ödülü Çek
+                  Claim Reward
                 </button>
               ) : (
-                <span className="text-[#6e6a61] uppercase">Çekilebilir ödül yok</span>
+                <span className="text-[#6e6a61] uppercase">No claimable reward</span>
               )}
             </div>
           </section>
@@ -259,10 +259,10 @@ export default function ProfilePage() {
         <section className="flex flex-col gap-4">
           <div className="flex items-baseline justify-between font-mono">
             <h2 className="text-sm font-bold tracking-[0.16em] text-[#eaeaea] uppercase">
-              Karakter Dükkanı (10 Maç Dayanıklılık)
+              Character Shop (10-Match Durability)
             </h2>
             <span className="text-xs text-[#c6a15b]">
-              Birim Fiyat: {formatYoctoNear(contractConfig?.price)}
+              Unit Price: {formatYoctoNear(contractConfig?.price)}
             </span>
           </div>
 
@@ -300,8 +300,8 @@ export default function ProfilePage() {
                   className="mt-4 cursor-pointer border border-[#c6a15b] bg-[#1c160d] px-4 py-2 font-mono text-xs font-bold text-[#e5c378] uppercase hover:bg-[#c6a15b] hover:text-[#090909] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {buyingKind === item.kind
-                    ? "ONAYLANIYOR..."
-                    : `${item.title} Satın Al (${formatYoctoNear(contractConfig?.price)})`}
+                    ? "CONFIRMING..."
+                    : `${item.title} Buy (${formatYoctoNear(contractConfig?.price)})`}
                 </button>
               </article>
             ))}
@@ -311,12 +311,12 @@ export default function ProfilePage() {
         {connected && (
           <section className="flex flex-col gap-4">
             <h2 className="font-mono text-sm font-bold tracking-[0.16em] text-[#eaeaea] uppercase">
-              Sahip Olduğun Karakterler ({characters.length})
+              Your Characters ({characters.length})
             </h2>
 
             {characters.length === 0 ? (
               <div className="border border-[#242424] bg-[#0e0d0b] p-5 font-mono text-xs text-[#8f897e]">
-                Henüz bir karakter NFT&apos;n yok. Yukarıdan bir karakter satın alabilirsin.
+                You have no character NFTs yet. Buy one above.
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-3">
@@ -342,10 +342,10 @@ export default function ProfilePage() {
                           }
                         >
                           {locked !== null && locked !== undefined
-                            ? `Maç #${locked}`
+                            ? `Match #${locked}`
                             : dur > 0
-                              ? "Hazır"
-                              : "Tükendi"}
+                              ? "Ready"
+                              : "Depleted"}
                         </span>
                       </div>
                       <div className="mt-3 h-1.5 w-full bg-[#1f1d19]">
@@ -357,7 +357,7 @@ export default function ProfilePage() {
                         />
                       </div>
                       <div className="mt-1.5 text-[11px] text-[#8f897e]">
-                        Dayanıklılık: {dur} / {maxDurability}
+                        Durability: {dur} / {maxDurability}
                       </div>
                     </div>
                   );
