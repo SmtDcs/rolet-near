@@ -2,6 +2,8 @@
 
 **A turn-based revolver duel whose match rules run in a NEAR smart contract.**
 
+**Demo video:** [docs/demo.mp4](docs/demo.mp4) (59 s, gameplay + testnet contract run, voiceover)
+
 Two players share one revolver. The contract loads 8 chambers with a random 2–6 live rounds and announces the live count at every load. Each player starts with 4 HP. On your turn you either play an item card or pull the trigger: aim at your opponent, or aim at yourself (a blank on yourself keeps your turn). First to 0 HP loses a round; a match is best of 3 rounds. The winner is paid a reward from the contract's treasury.
 
 Rolet started as a Solana/MagicBlock game. **This repository is its port to NEAR, built during NEAR HACKATHON 2026.**
