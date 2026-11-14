@@ -23,6 +23,7 @@ import { createGameCaller } from "../lib/nearCall";
 import { bytesToBase64, commitment, generateSecret } from "../lib/nearCommit";
 import { ACTION_GAS, FC_ALLOWANCE_YOCTO, GAME_METHODS } from "../lib/nearConfig";
 import { generateKeyPair } from "../lib/nearKey";
+import { checkKeyOnChain, decideKeyAction } from "../lib/nearKeyFlow";
 import { classifyError } from "../lib/nearOutcome";
 import { isAction, type MatchView } from "../lib/nearTypes";
 
@@ -254,6 +255,22 @@ test("local near-sandbox E2E match with FC access keys and error classifications
       allowance: BigInt(FC_ALLOWANCE_YOCTO),
     });
 
+    const aliceStored = {
+      ...aliceFc,
+      createdAt: Date.now(),
+      allowanceYocto: FC_ALLOWANCE_YOCTO,
+    };
+    const onChainAdded = await checkKeyOnChain(rpcUrl, aliceId, aliceFc.publicKey, contractId);
+    assert.equal(onChainAdded, "present");
+    assert.equal(
+      decideKeyAction({
+        stored: aliceStored,
+        onChain: onChainAdded,
+        walletSupportsFcKey: false,
+      }),
+      "use",
+    );
+
     const aliceCaller = createGameCaller({
       accountId: aliceId,
       contractId,
@@ -393,8 +410,18 @@ test("local near-sandbox E2E match with FC access keys and error classifications
     writeFixture("near-errors/not-enough-allowance.json", serializeError(rawAllowanceErr));
     writeFixture("outcomes/allowance-error.json", serializeError(rawAllowanceErr));
 
-    // 3. Deleted FC key -> missingKey
+    // 3. Deleted FC key -> missingKey + decideKeyAction returns addkey
     await aliceAccount.deleteKey(aliceFc.publicKey);
+    const onChainDeleted = await checkKeyOnChain(rpcUrl, aliceId, aliceFc.publicKey, contractId);
+    assert.equal(onChainDeleted, "missing");
+    assert.equal(
+      decideKeyAction({
+        stored: aliceStored,
+        onChain: onChainDeleted,
+        walletSupportsFcKey: false,
+      }),
+      "addkey",
+    );
     let missingErr: unknown;
     try {
       await aliceCaller.sendGameCall("cancel", { match_id: "999" });
