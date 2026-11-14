@@ -26,6 +26,9 @@ export interface PlayableStageProps {
   characterKind?: CharacterKind;
   statusLabel?: string;
   deadlineSecondsLeft?: number | null;
+  canClaimTimeout?: boolean;
+  onClaimTimeout?: () => void;
+  claimTimeoutBusy?: boolean;
   onStageOutput?: (event: StageOutput) => void;
   onModelChange?: (model: GameModel) => void;
 }
@@ -66,6 +69,9 @@ export function PlayableStage({
   characterKind = "Kuleci",
   statusLabel,
   deadlineSecondsLeft = null,
+  canClaimTimeout = false,
+  onClaimTimeout,
+  claimTimeoutBusy = false,
   onStageOutput,
   onModelChange,
 }: PlayableStageProps) {
@@ -386,6 +392,9 @@ export function PlayableStage({
         onToggleMute: toggleMute,
         onCancelLockpick: () => setLockpickSlot(null),
         statusLabel,
+        canClaimTimeout,
+        onClaimTimeout,
+        claimTimeoutBusy,
       }}
       onRivalClipEnded={handleRivalClipEnded}
       onUseItem={handleUseItem}

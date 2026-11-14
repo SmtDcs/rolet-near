@@ -55,6 +55,17 @@ export function HudLayer({
         </div>
 
         <div className="pointer-events-auto flex items-center gap-3">
+          {hud.canClaimTimeout && hud.onClaimTimeout && (
+            <button
+              type="button"
+              disabled={hud.claimTimeoutBusy}
+              onClick={hud.onClaimTimeout}
+              className="cursor-pointer border border-[#e61919] bg-[#3b0b0b]/95 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.14em] text-[#ffd6d6] uppercase hover:bg-[#5c1212] disabled:cursor-wait disabled:opacity-50"
+            >
+              {hud.claimTimeoutBusy ? "Claiming..." : "Time out — claim win"}
+            </button>
+          )}
+
           {deadlineSecondsLeft !== null && (
             <span
               className={`font-mono text-[11px] tracking-[0.14em] ${

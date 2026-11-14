@@ -52,6 +52,9 @@ export interface StageHudProps {
   onToggleMute: () => void;
   onCancelLockpick?: () => void;
   statusLabel?: string;
+  canClaimTimeout?: boolean;
+  onClaimTimeout?: () => void;
+  claimTimeoutBusy?: boolean;
 }
 
 export const INITIAL_FX_STATE: StageFxState = {
