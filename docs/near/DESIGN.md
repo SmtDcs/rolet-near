@@ -408,7 +408,8 @@ Eşya dağıtımı: `items_per_load[round]` kadar, eşit ağırlıklı torbadan 
 
 Maç bitince ödül **aynı `fire`/`claim_timeout` çağrısı içinde** `Promise::new(winner).transfer(reward)` ile gönderilir (ayrı `settle` yok). Treasury yetersizse maç yine biter, ödül `owed` olarak kaydedilir ve `claim_reward()` ile sonradan çekilir.
 
-Depolama: bitmiş maçlar `Finished` olduktan sonra `log` budanır, maç kaydı küçük bir özet halinde tutulur (veya N gün sonra silinir). Depolama maliyeti treasury'den karşılanır; `Config.min_treasury` altına inince yeni maç kabul edilmez.
+Depolama: bitmiş maçlar `Finished` olduktan sonra `log` ve `game.load.fixed` budanır, maç kaydı küçük bir özet halinde tutulur (veya N gün sonra silinir). Depolama maliyeti treasury'den karşılanır; `Config.min_treasury` (varsayılan 0.1 NEAR) altına inince yeni maç kabul edilmez.
+- Ölçülen `env::storage_usage()` (T-116 birim testi, R2 4'lü yük + log girişleri): maç ortası `307212 B` → maç sonu budama sonrası `307161 B` (`-51 B` fark; `LOG_CAP = 32` dolduğunda tasarruf daha da büyür).
 
 ### 4.8 Olaylar ve istemci senkronu
 - Her aksiyon hem `log`'a (`seq` ile) yazılır hem NEP-297 formatında `EVENT_JSON:{"standard":"rolet","version":"1.0.0","event":"shot","data":[...]}` olarak loglanır.

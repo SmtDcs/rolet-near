@@ -49,6 +49,8 @@ pub struct Config {
     pub tincture_good_pct: u32,
     /// Oyuncu başına eşya slotu — DESIGN §3.1: 8.
     pub max_items: u8,
+    /// Yeni maç kabulü için gereken minimum treasury bakiyesi (DESIGN §4.7).
+    pub min_treasury: NearToken,
 }
 
 impl Default for Config {
@@ -68,6 +70,7 @@ impl Default for Config {
             allowance_hint: NearToken::from_millinear(500),
             tincture_good_pct: 40,
             max_items: 8,
+            min_treasury: NearToken::from_millinear(100),
         }
     }
 }
@@ -103,6 +106,7 @@ mod tests {
         assert_eq!(c.allowance_hint, NearToken::from_millinear(500));
         assert_eq!(c.tincture_good_pct, 40);
         assert_eq!(c.max_items, 8);
+        assert_eq!(c.min_treasury, NearToken::from_millinear(100));
     }
 
     #[test]

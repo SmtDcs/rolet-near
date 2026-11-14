@@ -203,6 +203,9 @@ impl Contract {
         m.status = Status::Finished;
         m.winner = Some(winner);
         m.deadline_ms = 0;
+        // T-116: bitmiş maçta büyük alanlar budanır, özet (skor, can, oyuncular, seq) kalır.
+        m.log.clear();
+        m.game.load.fixed.clear();
 
         let reward = self.config.reward;
         for i in 0..2usize {
@@ -329,6 +332,10 @@ impl Contract {
 
         match self.matches.get(&match_id) {
             None => {
+                require!(
+                    self.treasury >= self.config.min_treasury,
+                    "treasury below minimum"
+                );
                 let m = Match {
                     id: match_id,
                     status: Status::Pending,
@@ -1357,5 +1364,60 @@ mod tests {
         switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
         c.claim_timeout(U64(7));
         c.claim_reward();
+    }
+
+    // ------------------------------------------------------------------
+    // T-116: Depolama ve budama
+    // ------------------------------------------------------------------
+
+    /// T-116: `treasury < min_treasury` iken yeni maç kabul edilmez.
+    #[test]
+    #[should_panic(expected = "treasury below minimum")]
+    fn join_rejected_below_min_treasury() {
+        let mut c = setup();
+        c.treasury = NearToken::from_millinear(99); // < 100 mNEAR varsayılan
+        c.join(U64(7), "bob.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
+    }
+
+    /// T-116 bitti kuralı: bitmiş maçta `log` ve `fixed` temizlenir, özet
+    /// kalır ve maç sonu `env::storage_usage()` maç ortasından küçüktür.
+    #[test]
+    fn finished_match_prunes_log_and_fixed_reducing_storage() {
+        let mut c = setup_active();
+        let before_mid = env::storage_usage();
+
+        // Maç ortasında epey aksiyon biriktir (R2 yükü + log girişleri).
+        let mut m = c.match_or_panic(7);
+        m.game.round = 2;
+        m.game.score = [1, 0];
+        m.game.hp = [4, 1];
+        m.game.max_hp = 4;
+        m.game.load = Load::new(2, 2);
+        m.game.turn = 0;
+        c.matches.insert(&7, &m);
+
+        let mut src = ScriptedSource::new(vec![Shell::Blank, Shell::Blank, Shell::Live]);
+        switch_at("alice.testnet", NearToken::ZERO, 2_000);
+        c.fire_with(U64(7), Target::SelfTarget, &mut src); // Blank -> sıra kalır
+        c.fire_with(U64(7), Target::SelfTarget, &mut src); // Blank -> sıra kalır
+        let mid_storage = env::storage_usage();
+        assert!(!c.match_or_panic(7).log.is_empty());
+        assert!(!c.match_or_panic(7).game.load.fixed.is_empty());
+
+        // Maçı bitiren atış → budama çalışır.
+        c.fire_with(U64(7), Target::Opponent, &mut src); // Live -> R2 & maç biter
+        let end_storage = env::storage_usage();
+
+        let finished = c.match_or_panic(7);
+        assert_eq!(finished.status, Status::Finished);
+        assert_eq!(finished.winner, Some(0));
+        assert_eq!(finished.game.score, [2, 0]);
+        assert!(finished.seq > 0);
+        assert!(finished.log.is_empty());
+        assert!(finished.game.load.fixed.is_empty());
+        assert!(
+            end_storage < mid_storage,
+            "end_storage ({end_storage}) < mid_storage ({mid_storage}) olmalı (before_mid={before_mid})"
+        );
     }
 }
