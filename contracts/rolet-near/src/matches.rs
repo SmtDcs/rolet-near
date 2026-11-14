@@ -453,6 +453,79 @@ impl Contract {
             game_use_item(game, cfg, actor, slot, steal_slot, src)
         })
     }
+
+    /// İki aşamalı zaman aşımı talebi (T-113, DESIGN §4.4):
+    /// - `Revealing`: `reveal_deadline_ms` geçtikten sonra açmayan tarafa karşı
+    ///   maç iptal edilir; zamanında açan tarafın durability'si iade edilir,
+    ///   açmayan ceza olarak iade alamaz; ödül ödenmez.
+    /// - `Active`: sıra sahibinin `deadline_ms`i geçtikten sonra diğer oyuncu
+    ///   çağırır → çağıran kazanır, istatistikler yazılır ve ödül ödenir.
+    pub fn claim_timeout(&mut self, match_id: U64) -> Vec<Action> {
+        require_direct_call();
+        let caller = env::predecessor_account_id();
+        let mut m = self.match_or_panic(match_id.0);
+        let caller_idx = participant_index(&m, &caller);
+        let now = now_ms();
+        let mut produced = Vec::new();
+
+        match m.status {
+            Status::Revealing => {
+                require!(now >= m.reveal_deadline_ms, "reveal timeout not reached");
+                let other_idx = 1 - caller_idx;
+                // Sadece kendisi açmamışken rakibini cezalandıramaz; ikisi de
+                // açmadıysa kilitleri çözmek için çağrıya izin verilir (iadesiz).
+                require!(
+                    m.secrets[caller_idx].is_some() || m.secrets[other_idx].is_none(),
+                    "caller did not reveal"
+                );
+                for i in 0..2usize {
+                    let refund = m.secrets[i].is_some();
+                    let acc = m.players[i].clone();
+                    let tok = m.tokens[i].clone();
+                    self.release(&acc, m.id, &tok, refund);
+                }
+                m.status = Status::Cancelled;
+                m.reveal_deadline_ms = 0;
+                let action = Action::TimeoutClaimed { by: caller_idx as u8 };
+                push_action(&mut m, action.clone());
+                produced.push(action);
+            }
+            Status::Active => {
+                let by = caller_idx as u8;
+                require!(by != m.game.turn, "cannot claim timeout on your own turn");
+                require!(now >= m.deadline_ms, "turn timeout not reached");
+                let timeout_action = Action::TimeoutClaimed { by };
+                let end_action = Action::MatchEnded {
+                    winner: by,
+                    reward: self.config.reward.as_yoctonear().into(),
+                };
+                push_action(&mut m, timeout_action.clone());
+                push_action(&mut m, end_action.clone());
+                produced.push(timeout_action);
+                produced.push(end_action);
+                self.finish_match(&mut m, by);
+            }
+            _ => panic!("match cannot be timed out in current status"),
+        }
+
+        self.matches.insert(&m.id, &m);
+        produced
+    }
+
+    /// Treasury yetersizken `owed` olarak birikmiş ödülü çeker (T-113, DESIGN §4.7).
+    pub fn claim_reward(&mut self) -> NearToken {
+        require_direct_call();
+        let player = env::predecessor_account_id();
+        let mut st = self.player_state(&player);
+        require!(st.owed > NearToken::ZERO, "no reward owed");
+        let claimable = st.owed.min(self.treasury);
+        require!(claimable > NearToken::ZERO, "insufficient treasury");
+        st.owed = st.owed.saturating_sub(claimable);
+        self.treasury = self.treasury.saturating_sub(claimable);
+        self.players.insert(&player, &st);
+        Promise::new(player).transfer(claimable).detach();
+        claimable
+    }
 }
 
 #[cfg(test)]
@@ -1095,5 +1168,194 @@ mod tests {
             .build();
         near_sdk::testing_env!(ctx);
         c.fire(U64(7), Target::Opponent);
+    }
+
+    // ------------------------------------------------------------------
+    // T-113: claim_timeout + claim_reward
+    // ------------------------------------------------------------------
+
+    /// Revealing aşamasında t = 1_000'de kurulmuş maç (`reveal_deadline_ms = 61_000`).
+    fn setup_revealing_at_1000() -> Contract {
+        switch_at("owner.testnet", NearToken::ZERO, 1_000);
+        let mut c = Contract::new("owner.testnet".parse().unwrap(), Config::default());
+        c.treasury = NearToken::from_near(10);
+        for (who, kind) in [("alice.testnet", Kind::Kuleci), ("bob.testnet", Kind::Ayarci)] {
+            switch_at(who, NearToken::from_near(1), 1_000);
+            c.buy_character(kind);
+        }
+        switch_at("alice.testnet", NearToken::ZERO, 1_000);
+        c.join(U64(7), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", 7), alice_token(&c));
+        switch_at("bob.testnet", NearToken::ZERO, 1_000);
+        c.join(U64(7), "alice.testnet".parse().unwrap(), real_commit(2, "bob.testnet", 7), bob_token(&c));
+        switch_at("alice.testnet", NearToken::ZERO, 1_000);
+        c
+    }
+
+    /// T-113 bitti kuralı: süre dolmadan reveal timeout red.
+    #[test]
+    #[should_panic(expected = "reveal timeout not reached")]
+    fn reveal_timeout_rejected_before_deadline() {
+        let mut c = setup_revealing_at_1000();
+        c.reveal(U64(7), secret_of(1));
+        switch_at("alice.testnet", NearToken::ZERO, 60_999);
+        c.claim_timeout(U64(7));
+    }
+
+    /// T-113 bitti kuralı: süre dolmadan Active timeout red.
+    #[test]
+    #[should_panic(expected = "turn timeout not reached")]
+    fn active_timeout_rejected_before_deadline() {
+        let mut c = setup_active();
+        let turn = c.match_or_panic(7).game.turn as usize;
+        let waiting = c.match_or_panic(7).players[1 - turn].to_string();
+        let deadline = c.match_or_panic(7).deadline_ms;
+        switch_at(&waiting, NearToken::ZERO, deadline - 1);
+        c.claim_timeout(U64(7));
+    }
+
+    /// T-113 bitti kuralı: reveal aşaması timeout → açan taraf durability
+    /// iadesi alır (10), açmayan ceza olarak kaybeder (9); ödül yok.
+    #[test]
+    fn reveal_timeout_refunds_revealer_only() {
+        let mut c = setup_revealing_at_1000();
+        c.reveal(U64(7), secret_of(1)); // yalnızca Alice açtı
+
+        switch_at("alice.testnet", NearToken::ZERO, 61_000);
+        let actions = c.claim_timeout(U64(7));
+        assert_eq!(actions, vec![Action::TimeoutClaimed { by: 0 }]);
+
+        let m = c.match_or_panic(7);
+        assert_eq!(m.status, Status::Cancelled);
+        assert_eq!(m.winner, None);
+        assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 10);
+        assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
+        assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 9);
+        assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().locked_in, None);
+        assert_eq!(c.player_state(&"alice.testnet".parse().unwrap()).active_match, None);
+        assert_eq!(c.player_state(&"bob.testnet".parse().unwrap()).active_match, None);
+        assert!(get_created_receipts().is_empty());
+    }
+
+    /// T-113: açmayan taraf, açan tarafa karşı timeout açamaz.
+    #[test]
+    #[should_panic(expected = "caller did not reveal")]
+    fn reveal_timeout_rejected_for_non_revealer_against_revealer() {
+        let mut c = setup_revealing_at_1000();
+        c.reveal(U64(7), secret_of(1)); // Alice açtı
+        switch_at("bob.testnet", NearToken::ZERO, 61_000);
+        c.claim_timeout(U64(7));
+    }
+
+    /// T-113: iki taraf da açmadıysa süre dolunca kilitler çözülür (iadesiz).
+    #[test]
+    fn reveal_timeout_when_neither_revealed_unsticks_both_without_refund() {
+        let mut c = setup_revealing_at_1000();
+        switch_at("bob.testnet", NearToken::ZERO, 61_000);
+        c.claim_timeout(U64(7));
+        assert_eq!(c.match_or_panic(7).status, Status::Cancelled);
+        assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 9);
+        assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 9);
+        assert_eq!(c.player_state(&"alice.testnet".parse().unwrap()).active_match, None);
+        assert_eq!(c.player_state(&"bob.testnet".parse().unwrap()).active_match, None);
+    }
+
+    /// T-113 bitti kuralı: sırası olan oyuncu kendine timeout açamaz.
+    #[test]
+    #[should_panic(expected = "cannot claim timeout on your own turn")]
+    fn active_timeout_rejected_for_turn_owner() {
+        let mut c = setup_active();
+        let m = c.match_or_panic(7);
+        let turn_acc = m.players[m.game.turn as usize].to_string();
+        switch_at(&turn_acc, NearToken::ZERO, m.deadline_ms);
+        c.claim_timeout(U64(7));
+    }
+
+    /// T-113 bitti kuralı: Active timeout → diğer oyuncu kazanır ve ödül alır.
+    #[test]
+    fn active_timeout_awards_caller_and_pays_reward() {
+        let mut c = setup_active();
+        let treasury_before = c.treasury;
+        let m = c.match_or_panic(7);
+        let waiting_idx = 1 - m.game.turn as usize;
+        let waiting_acc = m.players[waiting_idx].clone();
+
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
+        let actions = c.claim_timeout(U64(7));
+        assert_eq!(
+            actions,
+            vec![
+                Action::TimeoutClaimed { by: waiting_idx as u8 },
+                Action::MatchEnded {
+                    winner: waiting_idx as u8,
+                    reward: NearToken::from_millinear(100).as_yoctonear().into(),
+                },
+            ]
+        );
+
+        let m_after = c.match_or_panic(7);
+        assert_eq!(m_after.status, Status::Finished);
+        assert_eq!(m_after.winner, Some(waiting_idx as u8));
+        assert_eq!(c.treasury, treasury_before.saturating_sub(NearToken::from_millinear(100)));
+        assert_eq!(c.player_state(&waiting_acc).wins, 1);
+        assert_eq!(c.player_state(&m.players[m.game.turn as usize]).losses, 1);
+        assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
+        assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().locked_in, None);
+
+        let receipts = get_created_receipts();
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].receiver_id, waiting_acc);
+    }
+
+    /// T-113: treasury yetersizken owed birikir, `fund_treasury` sonrası
+    /// `claim_reward()` ile ödenir.
+    #[test]
+    fn claim_reward_pays_owed_after_treasury_funded() {
+        let mut c = setup_active();
+        c.treasury = NearToken::ZERO;
+        let m = c.match_or_panic(7);
+        let waiting_idx = 1 - m.game.turn as usize;
+        let waiting_acc = m.players[waiting_idx].clone();
+
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
+        c.claim_timeout(U64(7));
+        assert_eq!(c.player_state(&waiting_acc).owed, NearToken::from_millinear(100));
+        assert!(get_created_receipts().is_empty());
+
+        // Fonlama sonrası çekilebilir.
+        switch_at("donor.testnet", NearToken::from_millinear(150), m.deadline_ms + 1);
+        c.fund_treasury();
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms + 2);
+        let claimed = c.claim_reward();
+        assert_eq!(claimed, NearToken::from_millinear(100));
+        assert_eq!(c.player_state(&waiting_acc).owed, NearToken::ZERO);
+        assert_eq!(c.treasury, NearToken::from_millinear(50));
+
+        let receipts = get_created_receipts();
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].receiver_id, waiting_acc);
+        assert!(receipts[0].actions.iter().any(|a| match a {
+            near_sdk::mock::MockAction::Transfer { deposit, .. } =>
+                *deposit == NearToken::from_millinear(100),
+            _ => false,
+        }));
+    }
+
+    #[test]
+    #[should_panic(expected = "no reward owed")]
+    fn claim_reward_rejects_when_nothing_owed() {
+        let mut c = setup_active();
+        c.claim_reward();
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient treasury")]
+    fn claim_reward_rejects_when_treasury_empty() {
+        let mut c = setup_active();
+        c.treasury = NearToken::ZERO;
+        let m = c.match_or_panic(7);
+        let waiting_acc = m.players[1 - m.game.turn as usize].clone();
+        switch_at(waiting_acc.as_str(), NearToken::ZERO, m.deadline_ms);
+        c.claim_timeout(U64(7));
+        c.claim_reward();
     }
 }
