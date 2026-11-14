@@ -535,9 +535,85 @@ pub fn use_item(
     Ok(actions)
 }
 
-/// Eşyanın etkisini uygular ve tüm aksiyonları döner. Her kol önce kontrol,
-/// sonra mutasyon sırasıyla yazılmıştır: hata durumunda state bozulmaz
-/// (Lockpick'in atomikliği buna dayanır, §3.2 kural 9).
+/// Eşyanın şu an uygulanabilir olup olmadığını state'i **değiştirmeden** sınar
+/// (Lockpick'in "hiçbir şey tüketilmez" atomikliği, §3.2 kural 9).
+fn check_item(
+    state: &GameState,
+    cfg: &Config,
+    actor: usize,
+    item: Item,
+    steal_slot: Option<u8>,
+) -> Result<(), GameError> {
+    match item {
+        // Tüfeğe bakan eşyalar boş tüfekte anlamsız.
+        Item::Loupe | Item::Flask | Item::Magnet => {
+            if state.load.is_empty() {
+                return Err(GameError::NoShellsLeft);
+            }
+        }
+        // Ticker gelecekteki fişek ister; tek fişek kaldığında verilecek
+        // bilgi yoktur → kullanım reddedilir, eşya korunur [Buckshot
+        // davranışı T-001 referans doğrulamasında teyit edilecek].
+        Item::Ticker => {
+            if state.load.remaining < 2 {
+                return Err(GameError::ItemBlocked);
+            }
+        }
+        Item::Pipe => {
+            if state.heal_cut {
+                return Err(GameError::HealBlocked);
+            }
+            // Maksimum candayken kullanım anlamsızdır: red, eşya korunur.
+            if state.hp[actor] >= state.max_hp {
+                return Err(GameError::ItemBlocked);
+            }
+        }
+        // Tincture: iyileşme kesildiyse tamamen kapalı (TASKS varsayılanı;
+        // T-001 sonucuna göre yalnızca -1 yolu açılabilir).
+        Item::Tincture => {
+            if state.heal_cut {
+                return Err(GameError::HealBlocked);
+            }
+        }
+        Item::Shackle => {
+            if state.shackled == Some((1 - actor) as u8) {
+                return Err(GameError::AlreadyShackled);
+            }
+            if state.shackle_broke_this_turn {
+                return Err(GameError::ShackleJustBroke);
+            }
+        }
+        Item::Hacksaw => {
+            if state.saw_active {
+                return Err(GameError::SawAlreadyActive);
+            }
+        }
+        Item::Lockpick => {
+            let steal = steal_slot.ok_or(GameError::SlotOutOfRange)? as usize;
+            if steal >= cfg.max_items as usize {
+                return Err(GameError::SlotOutOfRange);
+            }
+            let opponent = 1 - actor;
+            if steal >= state.items[opponent].len() {
+                return Err(GameError::SlotEmpty);
+            }
+            let stolen = state.items[opponent][steal];
+            if stolen == Item::Lockpick {
+                // Adrenalin çalınamaz (§2.4); Rolet karşılığı da aynı.
+                return Err(GameError::ItemBlocked);
+            }
+            // Çalınan eşya hemen uygulanacak: uygulanamazsa işlem reddedilir
+            // ve hiçbir şey tüketilmez (§3.2 kural 9). `stolen` Lockpick
+            // olamayacağı için özyineleme tek seviyede kalır.
+            check_item(state, cfg, actor, stolen, None)?;
+        }
+    }
+    Ok(())
+}
+
+/// Eşyanın etkisini uygular ve tüm aksiyonları döner. Ön koşullar
+/// `check_item` ile doğrulandıktan sonra mutasyonlar yapılır; hata
+/// durumunda state bozulmaz.
 fn apply_item(
     state: &mut GameState,
     cfg: &Config,
@@ -547,6 +623,7 @@ fn apply_item(
     steal_slot: Option<u8>,
     src: &mut dyn ShellSource,
 ) -> Result<Vec<Action>, GameError> {
+    check_item(state, cfg, actor, item, steal_slot)?;
     let mut actions = Vec::new();
     let item_used = |result: ItemResult| Action::ItemUsed {
         player: actor as u8,
@@ -560,14 +637,6 @@ fn apply_item(
             actions.push(item_used(ItemResult::Private { pos: 0, shell }));
         }
         Item::Pipe => {
-            // İyileşme kesildiyse tamamen kapalı (§2.5, R3 eşiği).
-            if state.heal_cut {
-                return Err(GameError::HealBlocked);
-            }
-            // Maksimum candayken kullanım anlamsızdır: red, eşya korunur.
-            if state.hp[actor] >= state.max_hp {
-                return Err(GameError::ItemBlocked);
-            }
             state.hp[actor] += 1;
             actions.push(item_used(ItemResult::Healed { amount: 1 }));
         }
@@ -582,28 +651,58 @@ fn apply_item(
             }
         }
         Item::Shackle => {
-            let opponent = (1 - actor) as u8;
-            if state.shackled == Some(opponent) {
-                return Err(GameError::AlreadyShackled);
-            }
-            // Bu sıra zincirinde kelepçe yeni kırıldıysa tekrar takılamaz (§3.2 kural 4).
-            if state.shackle_broke_this_turn {
-                return Err(GameError::ShackleJustBroke);
-            }
-            state.shackled = Some(opponent);
+            state.shackled = Some((1 - actor) as u8);
             actions.push(item_used(ItemResult::None));
         }
         Item::Hacksaw => {
-            if state.saw_active {
-                return Err(GameError::SawAlreadyActive);
-            }
             state.saw_active = true;
             actions.push(item_used(ItemResult::None));
         }
-        // Ek dörtlü T-106'da uygulanır.
-        Item::Ticker | Item::Magnet | Item::Lockpick | Item::Tincture => {
-            let _ = steal_slot;
-            return Err(GameError::ItemBlocked);
+        Item::Ticker => {
+            // Gelecek konumlar [1, remaining-1]; mevcut (0) hariç.
+            let max = state.load.remaining as u32 - 1;
+            let pos = 1 + src.roll(max) as usize;
+            let shell = state.load.peek_at(pos, src)?;
+            actions.push(item_used(ItemResult::Private { pos: pos as u8, shell }));
+        }
+        Item::Magnet => {
+            let shell = state.load.current(src)?;
+            let flipped = match shell {
+                Shell::Live => Shell::Blank,
+                Shell::Blank => Shell::Live,
+            };
+            state.load.fixed[0] = Some(flipped);
+            match shell {
+                Shell::Live => {
+                    state.load.live_left -= 1;
+                    state.load.blank_left += 1;
+                }
+                Shell::Blank => {
+                    state.load.blank_left -= 1;
+                    state.load.live_left += 1;
+                }
+            }
+            actions.push(item_used(ItemResult::None));
+        }
+        Item::Lockpick => {
+            let steal = steal_slot.expect("check_item doğruladı") as usize;
+            let opponent = 1 - actor;
+            let stolen = state.items[opponent].remove(steal);
+            actions.push(item_used(ItemResult::None));
+            // Çalınan eşya anında kullanılır; `slot` alanı onun rakip
+            // ızgarasındaki (boşaltılan) konumunu gösterir.
+            let mut stolen_actions = apply_item(state, cfg, actor, stolen, steal as u8, None, src)?;
+            actions.append(&mut stolen_actions);
+        }
+        Item::Tincture => {
+            if src.roll(100) < cfg.tincture_good_pct {
+                let healed = (state.max_hp - state.hp[actor]).min(2);
+                state.hp[actor] += healed;
+                actions.push(item_used(ItemResult::Healed { amount: healed }));
+            } else {
+                actions.push(item_used(ItemResult::Damaged { amount: 1 }));
+                apply_damage(state, cfg, actor, 1, &mut actions, src);
+            }
         }
     }
     Ok(actions)
@@ -1299,5 +1398,264 @@ mod tests {
             use_item(&mut done, &Config::default(), 0, 0, None, &mut src),
             Err(GameError::MatchFinished)
         );
+    }
+
+    // ------------------------------------------------------------------
+    // T-106: eşyın — ek dörtlü (Ticker, Magnet, Lockpick, Tincture)
+    // ------------------------------------------------------------------
+
+    /// T-106: Ticker — mevcut hariç gelecekteki rastgele bir konumu
+    /// kullanana gizlice söyler; tek fişek kaldıysa red.
+    #[test]
+    fn ticker_reveals_a_future_shell() {
+        // 3 fişek: roll(2)=0 → pos 1; peek_at(1) kaynaktan Live çeker.
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Live], vec![0]);
+        let mut st = item_state(3, Load::new(1, 2), vec![Item::Ticker]);
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Ticker,
+                slot: 0,
+                result: ItemResult::Private { pos: 1, shell: Shell::Live },
+            }]
+        );
+        assert!(st.items[0].is_empty());
+        assert_eq!(st.load.remaining, 3); // fişek tüketilmez
+        assert_eq!(st.load.fixed[1], Some(Shell::Live));
+        assert_eq!(st.turn, 0);
+        // Tek fişek kaldıysa bilgi yok → red, eşya korunur.
+        let mut src2 = ScriptedSource::new(vec![]);
+        let mut load = Load::new(1, 1);
+        load.advance(Shell::Live);
+        let mut st2 = item_state(3, load, vec![Item::Ticker]);
+        assert_eq!(use_at(&mut st2, 0, &mut src2), Err(GameError::ItemBlocked));
+        assert_eq!(st2.items[0], vec![Item::Ticker]);
+    }
+
+    /// T-106: Magnet — mevcut fişeğin kutbunu çevirir; `announced_*`
+    /// değişmez, `live_left`/`blank_left` güncellenir.
+    #[test]
+    fn magnet_flips_current_shell_and_keeps_announced() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = item_state(3, Load::new(1, 1), vec![Item::Magnet]);
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Magnet,
+                slot: 0,
+                result: ItemResult::None,
+            }]
+        );
+        assert_eq!((st.load.announced_live, st.load.announced_blank), (1, 1));
+        assert_eq!((st.load.live_left, st.load.blank_left), (0, 2));
+        assert_eq!(st.load.fixed[0], Some(Shell::Blank)); // Live çevrildi
+        // Çevrilen fişek atışta gerçekten boş çıkar.
+        let actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        assert_eq!(
+            actions[0],
+            Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Blank, damage: 0 }
+        );
+        assert_eq!(st.hp, [5, 5]);
+        assert_eq!(st.turn, 0);
+    }
+
+    /// T-106: Magnet — fişek Loupe ile biliniyorsa kaynak tüketilmeden çevrilir.
+    #[test]
+    fn magnet_flips_known_shell_without_drawing() {
+        // Boş scripted kaynak: draw çağrılırsa panic eder.
+        let mut src = ScriptedSource::new(vec![]);
+        let mut st = item_state(3, Load::new(1, 1), vec![Item::Magnet]);
+        st.load.fixed[0] = Some(Shell::Blank); // Loupe ile açılmış gibi
+        use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(st.load.fixed[0], Some(Shell::Live));
+        assert_eq!((st.load.live_left, st.load.blank_left), (2, 0));
+        assert_eq!(st.load.announced_live, 1);
+        // Boş tüfekte red.
+        let mut src2 = ScriptedSource::new(vec![]);
+        let mut st2 = item_state(3, Load::new(0, 0), vec![Item::Magnet]);
+        assert_eq!(use_at(&mut st2, 0, &mut src2), Err(GameError::NoShellsLeft));
+        assert_eq!(st2.items[0], vec![Item::Magnet]);
+    }
+
+    /// T-106: Lockpick — rakibin eşyasını çalar ve hemen kullanır
+    /// (§3.2 kural 9). Çalınan Pipe actor'a uygulanır.
+    #[test]
+    fn lockpick_steals_and_uses_stolen_item() {
+        let mut src = ScriptedSource::new(vec![]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Lockpick]);
+        st.items[1] = vec![Item::Pipe];
+        st.hp = [3, 4];
+        let actions =
+            use_item(&mut st, &Config::default(), 0, 0, Some(0), &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![
+                Action::ItemUsed {
+                    player: 0,
+                    item: Item::Lockpick,
+                    slot: 0,
+                    result: ItemResult::None,
+                },
+                Action::ItemUsed {
+                    player: 0,
+                    item: Item::Pipe,
+                    slot: 0, // rakip ızgarasındaki boşaltılan konum
+                    result: ItemResult::Healed { amount: 1 },
+                },
+            ]
+        );
+        assert_eq!(st.hp, [4, 4]);
+        assert!(st.items[0].is_empty());
+        assert!(st.items[1].is_empty());
+    }
+
+    /// T-106: Lockpick — Lockpick çalınamaz; uygulanamazsa hiçbir şey
+    /// tüketilmez (rakip kelepçeliyken Shackle çalmak vb.).
+    #[test]
+    fn lockpick_rejections_preserve_everything() {
+        let mut src = ScriptedSource::new(vec![]);
+        // Lockpick çalınamaz.
+        let mut st = item_state(3, Load::new(1, 1), vec![Item::Lockpick]);
+        st.items[1] = vec![Item::Lockpick];
+        assert_eq!(
+            use_item(&mut st, &Config::default(), 0, 0, Some(0), &mut src),
+            Err(GameError::ItemBlocked)
+        );
+        assert_eq!(st.items[0], vec![Item::Lockpick]);
+        assert_eq!(st.items[1], vec![Item::Lockpick]);
+        // Çalınan Shackle uygulanamaz (rakip zaten kelepçeli) → atomik red.
+        let mut st2 = item_state(3, Load::new(1, 1), vec![Item::Lockpick]);
+        st2.items[1] = vec![Item::Shackle];
+        st2.shackled = Some(1);
+        assert_eq!(
+            use_item(&mut st2, &Config::default(), 0, 0, Some(0), &mut src),
+            Err(GameError::AlreadyShackled)
+        );
+        assert_eq!(st2.items[0], vec![Item::Lockpick]);
+        assert_eq!(st2.items[1], vec![Item::Shackle]);
+        // steal_slot yok / aralık dışı.
+        assert_eq!(
+            use_item(&mut st2, &Config::default(), 0, 0, None, &mut src),
+            Err(GameError::SlotOutOfRange)
+        );
+        assert_eq!(
+            use_item(&mut st2, &Config::default(), 0, 0, Some(1), &mut src),
+            Err(GameError::SlotEmpty)
+        );
+    }
+
+    /// T-106: Lockpick — çalınan Flask son fişeği atarsa yeni yükleme ve
+    /// dağıtım da işler; Lockpick yine de tüketilir.
+    #[test]
+    fn lockpick_stolen_flask_can_trigger_reload() {
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut st = item_state(2, Load::new(1, 1), vec![Item::Lockpick]);
+        st.load = Load::new(0, 1);
+        st.items[1] = vec![Item::Flask];
+        let actions =
+            use_item(&mut st, &Config::default(), 0, 0, Some(0), &mut src).unwrap();
+        assert_eq!(actions.len(), 6);
+        assert_eq!(
+            actions[1],
+            Action::ItemUsed {
+                player: 0,
+                item: Item::Flask,
+                slot: 0,
+                result: ItemResult::Ejected { shell: Shell::Blank },
+            }
+        );
+        assert_eq!(actions[2], Action::Ejected { shell: Shell::Blank });
+        assert_eq!(actions[3], Action::LoadStarted { live: 1, blank: 1, total: 2 });
+        assert_eq!(st.load.remaining, 2);
+        assert_eq!(st.items[0], vec![Item::Loupe, Item::Loupe]);
+        assert_eq!(st.items[1], vec![Item::Loupe, Item::Loupe]);
+    }
+
+    /// T-106: Tincture — `tincture_good_pct` altında +2 can (max'a kelepçeli),
+    /// üstünde -1 can; ölürse round biter; heal_cut'ta tamamen red.
+    #[test]
+    fn tincture_gamble_heals_damages_or_ends_round() {
+        let mut src = ScriptedSource::with_rolls(vec![], vec![30]);
+        let mut st = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
+        st.hp = [3, 3];
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![Action::ItemUsed {
+                player: 0,
+                item: Item::Tincture,
+                slot: 0,
+                result: ItemResult::Healed { amount: 2 },
+            }]
+        );
+        assert_eq!(st.hp, [5, 3]);
+        // İyi yol maksimumu aşamaz.
+        let mut src2 = ScriptedSource::with_rolls(vec![], vec![10]);
+        let mut st2 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
+        st2.hp = [4, 4];
+        let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
+        assert_eq!(
+            actions2[0],
+            Action::ItemUsed {
+                player: 0,
+                item: Item::Tincture,
+                slot: 0,
+                result: ItemResult::Healed { amount: 1 },
+            }
+        );
+        assert_eq!(st2.hp, [5, 4]);
+        // Kötü yol: -1 can, R3 eşiğine (2) düşünce HealCut.
+        let mut src3 = ScriptedSource::with_rolls(vec![], vec![40]);
+        let mut st3 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
+        st3.hp = [3, 3];
+        let actions3 = use_at(&mut st3, 0, &mut src3).unwrap();
+        assert_eq!(
+            actions3,
+            vec![
+                Action::ItemUsed {
+                    player: 0,
+                    item: Item::Tincture,
+                    slot: 0,
+                    result: ItemResult::Damaged { amount: 1 },
+                },
+                Action::HealCut,
+            ]
+        );
+        assert_eq!(st3.hp, [2, 3]);
+        assert!(st3.heal_cut);
+        // heal_cut'ta tamamen red.
+        let mut src4 = ScriptedSource::with_rolls(vec![], vec![0]);
+        let mut st4 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
+        st4.heal_cut = true;
+        assert_eq!(use_at(&mut st4, 0, &mut src4), Err(GameError::HealBlocked));
+        assert_eq!(st4.items[0], vec![Item::Tincture]);
+    }
+
+    /// T-106: Tincture kötü yolu öldürebilir (§2.4) → round biter,
+    /// kaybeden yeni round'u başlatır.
+    #[test]
+    fn tincture_bad_roll_can_kill() {
+        let mut src = ScriptedSource::with_rolls(vec![], vec![99, 0, 0, 0, 0, 0, 0]);
+        let mut st = item_state(1, Load::new(1, 1), vec![Item::Tincture]);
+        st.hp = [1, 2];
+        let actions = use_at(&mut st, 0, &mut src).unwrap();
+        assert_eq!(
+            actions[0],
+            Action::ItemUsed {
+                player: 0,
+                item: Item::Tincture,
+                slot: 0,
+                result: ItemResult::Damaged { amount: 1 },
+            }
+        );
+        assert_eq!(actions[1], Action::RoundEnded { winner: 1, score: [0, 1] });
+        assert_eq!(st.round, 2);
+        assert_eq!(st.hp, [4, 4]);
+        assert_eq!(st.turn, 0); // kaybeden (0) başlar
+        assert!(matches!(actions[2], Action::LoadStarted { .. }));
     }
 }
