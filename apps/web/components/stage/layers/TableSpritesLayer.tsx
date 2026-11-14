@@ -198,7 +198,7 @@ export function TableSpritesLayer({
       {/* Chamber ring by the revolver */}
       <div
         className="absolute -translate-x-1/2 -translate-y-1/2"
-        style={{ left: `${SHELL_RACK_ANCHOR.x * 100}%`, top: `${SHELL_RACK_ANCHOR.y * 100}%` }}
+        style={{ left: `${(SHELL_RACK_ANCHOR.x + 0.13) * 100}%`, top: `${(SHELL_RACK_ANCHOR.y + 0.05) * 100}%` }}
       >
         <ChamberRing visual={visual} />
       </div>

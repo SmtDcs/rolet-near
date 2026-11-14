@@ -194,10 +194,10 @@ export function RevolverLayer({
             left: `${REVOLVER_TABLE_ANCHOR.x * 100}%`,
             top: `${REVOLVER_TABLE_ANCHOR.y * 100}%`,
           }}
-          className="pointer-events-auto absolute h-24 w-56 -translate-x-1/2 -translate-y-1/2 cursor-grab border border-[#c6a15b]/45 bg-[#c6a15b]/5 transition hover:border-[#e5c378] hover:bg-[#c6a15b]/15 active:cursor-grabbing"
+          className="pointer-events-auto absolute h-24 w-56 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full transition hover:bg-[#e5c378]/10 active:cursor-grabbing"
         >
-          <span className="pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#0a0a0a]/90 px-2 py-0.5 font-mono text-[10px] tracking-[0.16em] text-[#e5c378] uppercase">
-            PICK UP / DRAG
+          <span className="pointer-events-none absolute -bottom-9 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] tracking-[0.2em] text-[#e5c378]/80 uppercase [text-shadow:0_1px_2px_#000]">
+            Drag the gun
           </span>
         </button>
       )}
