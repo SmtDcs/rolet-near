@@ -46,7 +46,7 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | @near-wallet-selector/meteor-wallet | **10.1.4** | https://www.npmjs.com/package/@near-wallet-selector/meteor-wallet |
 | @near-js/accounts | **2.5.1** | https://www.npmjs.com/package/@near-js/accounts · https://github.com/near/near-api-js |
 | @near-js/crypto | **2.5.1** | https://www.npmjs.com/package/@near-js/crypto |
-| @near-js/keystores | **2.5.1** | https://www.npmjs.com/package/@near-js/keystores |
+| @near-js/keystores | **2.5.1** *(geçişli (override))* | https://www.npmjs.com/package/@near-js/keystores |
 | @near-js/signers | **2.5.1** | https://www.npmjs.com/package/@near-js/signers |
 | @near-js/transactions | **2.5.1** | https://www.npmjs.com/package/@near-js/transactions |
 | @near-js/providers | **2.5.1** | https://www.npmjs.com/package/@near-js/providers |
