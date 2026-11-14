@@ -10,6 +10,7 @@ import {
   SHELL_RACK_ANCHOR,
 } from "@/lib/stage/layout";
 import type { StageVisualState } from "../types";
+import { ItemIcon } from "./ItemIcons";
 
 export interface TableSpritesLayerProps {
   visual: StageVisualState;
@@ -19,76 +20,134 @@ export interface TableSpritesLayerProps {
   onSelectStealSlot?: (stealSlot: number) => void;
 }
 
-const ITEM_LABELS: Record<Item, { short: string; name: string }> = {
-  Loupe: { short: "LOU", name: "Loupe" },
-  Pipe: { short: "PIP", name: "Pipe" },
-  Flask: { short: "FLA", name: "Flask" },
-  Shackle: { short: "SHA", name: "Shackle" },
-  Hacksaw: { short: "SAW", name: "Hacksaw" },
-  Ticker: { short: "TIC", name: "Ticker" },
-  Magnet: { short: "MAG", name: "Magnet" },
-  Lockpick: { short: "LCK", name: "Lockpick" },
-  Tincture: { short: "TIN", name: "Tincture" },
+const ITEM_NAMES: Record<Item, string> = {
+  Loupe: "Loupe",
+  Pipe: "Pipe",
+  Flask: "Flask",
+  Shackle: "Shackle",
+  Hacksaw: "Hacksaw",
+  Ticker: "Ticker",
+  Magnet: "Magnet",
+  Lockpick: "Lockpick",
+  Tincture: "Tincture",
 };
 
-function HpTubePanel({
+/** Glowing bulbs standing on the table + best-of-3 notches carved beside them. */
+function SideTokens({
   label,
   hp,
   maxHp,
   healCut,
+  wins,
   xPct,
   yPct,
-  align,
+  tone,
 }: {
   label: string;
   hp: number;
   maxHp: number;
   healCut: boolean;
+  wins: number;
   xPct: number;
   yPct: number;
-  align: "left" | "right";
+  tone: "warm" | "red";
 }) {
+  const lit = tone === "warm" ? "#f2c46a" : "#e04545";
+  const glow = tone === "warm" ? "rgba(242,196,106,0.75)" : "rgba(224,69,69,0.75)";
   return (
     <div
-      className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border border-[#c6a15b]/35 bg-[#0e0c0a]/90 px-2.5 py-1.5"
+      className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2"
       style={{ left: `${xPct}%`, top: `${yPct}%` }}
     >
-      <div
-        className={`mb-1 flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] uppercase ${
-          align === "right" ? "justify-end" : "justify-start"
-        }`}
-      >
-        <span className="text-[#c6a15b]">{label}</span>
-        {healCut && (
-          <span className="border border-[#e61919]/70 bg-[#e61919]/20 px-1 text-[9px] text-[#ff6b6b]">
-            HEAL CUT
-          </span>
-        )}
-      </div>
-      <div className="flex gap-1.5">
+      <div className="flex gap-2">
         {Array.from({ length: maxHp }, (_, i) => {
-          const lit = i < hp;
+          const on = i < hp;
+          const cut = on && healCut && i === 0;
           return (
-            <div
-              key={i}
-              className={`h-6 w-3 border transition-colors duration-200 ${
-                lit
-                  ? healCut && i === 0
-                    ? "border-[#e61919] bg-[#e61919]/80 shadow-[0_0_8px_rgba(230,25,25,0.65)]"
-                    : "border-[#e5c378] bg-[#c6a15b]/85 shadow-[0_0_8px_rgba(198,161,91,0.55)]"
-                  : "border-[#3a3228] bg-[#161310]"
-              }`}
-              title={`${label} HP ${i + 1}`}
-            />
+            <div key={i} className="relative" title={`${label} HP ${i + 1}`}>
+              <div
+                className="h-5 w-3 rounded-t-full rounded-b-[3px] transition-all duration-300"
+                style={{
+                  background: on
+                    ? `radial-gradient(circle at 35% 30%, #fff8e0 0%, ${cut ? "#e61919" : lit} 55%, #5a3a10 100%)`
+                    : "linear-gradient(#1a1713, #0d0b09)",
+                  boxShadow: on
+                    ? `0 0 10px 2px ${cut ? "rgba(230,25,25,0.7)" : glow}, 0 4px 5px rgba(0,0,0,0.7)`
+                    : "0 3px 4px rgba(0,0,0,0.7)",
+                  border: on ? "none" : "1px solid #2a241c",
+                }}
+              />
+              <div className="mx-auto h-1 w-2 bg-[#3a3228]" />
+            </div>
           );
         })}
+      </div>
+      <div className="flex gap-1.5" title={`${label} rounds won: ${wins}/2`}>
+        {[0, 1].map((n) => (
+          <span
+            key={n}
+            className="block h-[3px] w-5 rounded-full"
+            style={{
+              background: n < wins ? "#e5c378" : "#2a241c",
+              boxShadow: n < wins ? "0 0 6px rgba(229,195,120,0.7)" : "none",
+            }}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
+/** 8-chamber cylinder ring drawn beside the revolver. */
+function ChamberRing({ visual }: { visual: StageVisualState }) {
+  const R = 17;
+  return (
+    <svg
+      viewBox="-26 -26 52 52"
+      className="h-12 w-12 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+      role="img"
+      aria-label={`${visual.remaining} of 8 chambers loaded`}
+    >
+      <circle r="23" fill="#14110d" stroke="#5c4228" strokeWidth="1.5" />
+      <circle r="5" fill="#0a0806" stroke="#3a2c1c" strokeWidth="1" />
+      {Array.from({ length: 8 }, (_, idx) => {
+        const a = (idx * Math.PI) / 4 - Math.PI / 2;
+        const loaded = idx < visual.remaining;
+        const known: Shell | undefined = loaded ? visual.knownShells.get(idx) : undefined;
+        const fill = !loaded
+          ? "#0c0a08"
+          : known === "Live"
+            ? "#e03030"
+            : known === "Blank"
+              ? "#7fa6bd"
+              : "#c6a15b";
+        return (
+          <circle
+            key={idx}
+            cx={Math.cos(a) * R}
+            cy={Math.sin(a) * R}
+            r="4.2"
+            fill={fill}
+            stroke={loaded ? "#2a1d10" : "#2a241c"}
+            strokeWidth="1"
+            style={loaded && known === "Live" ? { filter: "drop-shadow(0 0 3px #e03030)" } : undefined}
+          >
+            <title>
+              {!loaded
+                ? "Empty chamber"
+                : known
+                  ? `Chamber ${idx + 1}: ${known}`
+                  : `Chamber ${idx + 1}: Loaded`}
+            </title>
+          </circle>
+        );
+      })}
+    </svg>
+  );
+}
+
 /**
- * L3: Interactive & animated tabletop sprites (8 chambers, 4+4 items, HP tubes, score notches).
+ * L3: Tabletop objects: chamber ring, items lying on the felt, HP bulbs, round notches.
  */
 export function TableSpritesLayer({
   visual,
@@ -102,93 +161,70 @@ export function TableSpritesLayer({
   const localItems = visual.items[you];
   const oppItems = visual.items[opp];
   const pickingSteal = lockpickSlot !== null;
+  const active = visual.phase === "active";
+  const yourTurn = active && visual.turn === you;
+  const rivalTurn = active && visual.turn === opp;
 
   return (
     <div data-testid="table-sprites-layer" className="pointer-events-none absolute inset-0 z-30">
-      {/* Best-of-3 Score Notches */}
+      {/* Table lighting: warm pool on your side, red cast on the rival's */}
       <div
-        className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-4 border border-[#c6a15b]/25 bg-[#0c0a08]/85 px-3 py-1 font-mono text-[10px] tracking-[0.16em]"
+        className="absolute inset-x-0 bottom-0 h-[48%] transition-opacity duration-700"
         style={{
-          left: `${SCORE_NOTCH_ANCHOR.x * 100}%`,
-          top: `${SCORE_NOTCH_ANCHOR.y * 100}%`,
+          opacity: yourTurn ? 1 : 0,
+          background:
+            "radial-gradient(ellipse 60% 70% at 50% 100%, rgba(255,190,100,0.20) 0%, transparent 72%)",
         }}
+      />
+      <div
+        className="absolute inset-x-0 top-[40%] h-[22%] transition-opacity duration-700"
+        style={{
+          opacity: rivalTurn ? 1 : 0,
+          background:
+            "radial-gradient(ellipse 60% 80% at 50% 30%, rgba(220,30,30,0.22) 0%, transparent 72%)",
+        }}
+      />
+
+      {/* Chamber ring by the revolver */}
+      <div
+        className="absolute -translate-x-1/2 -translate-y-1/2"
+        style={{ left: `${SHELL_RACK_ANCHOR.x * 100}%`, top: `${SHELL_RACK_ANCHOR.y * 100}%` }}
       >
-        <span className="text-[#9a9a9a]">
-          RIVAL {visual.score[opp]}/2
-        </span>
-        <span className="text-[#c6a15b]">R{visual.round}</span>
-        <span className="text-[#eaeaea]">
-          YOU {visual.score[you]}/2
-        </span>
+        <ChamberRing visual={visual} />
       </div>
 
-      {/* 8-Chamber Shell Rack */}
-      <div
-        className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 border border-[#c6a15b]/30 bg-[#0d0b09]/90 px-2.5 py-1.5"
-        style={{
-          left: `${SHELL_RACK_ANCHOR.x * 100}%`,
-          top: `${SHELL_RACK_ANCHOR.y * 100}%`,
-        }}
-      >
-        {Array.from({ length: 8 }, (_, idx) => {
-          const isLoaded = idx < visual.remaining;
-          const known: Shell | undefined = isLoaded ? visual.knownShells.get(idx) : undefined;
-          let tone = "border-[#2e2820] bg-[#14110e] text-[#4a4339]";
-          let label = "·";
-          if (isLoaded) {
-            if (known === "Live") {
-              tone = "border-[#e61919] bg-[#7f1616] text-[#ffd6d6]";
-              label = "!";
-            } else if (known === "Blank") {
-              tone = "border-[#6e8a9c] bg-[#1e313d] text-[#c8e6f5]";
-              label = "○";
-            } else {
-              tone = "border-[#c6a15b]/60 bg-[#2a2217] text-[#e5c378]";
-              label = "?";
-            }
-          }
-          return (
-            <div
-              key={idx}
-              className={`flex h-6 w-3.5 items-center justify-center border font-mono text-[10px] font-bold ${tone}`}
-              title={
-                !isLoaded
-                  ? "Empty chamber"
-                  : known
-                    ? `Chamber ${idx + 1}: ${known}`
-                    : `Chamber ${idx + 1}: Loaded`
-              }
-            >
-              {label}
-            </div>
-          );
-        })}
-        <span className="ml-2 font-mono text-[10px] text-[#9a9a9a]">
-          {visual.announcedLive}D/{visual.announcedBlank}K
-        </span>
-      </div>
+      {/* Hacksaw marker (subtle) */}
+      {visual.sawActive && (
+        <div
+          className="absolute -translate-x-1/2 font-mono text-[10px] tracking-[0.2em] text-[#e04545]/90 uppercase"
+          style={{ left: `${SCORE_NOTCH_ANCHOR.x * 100}%`, top: `${SCORE_NOTCH_ANCHOR.y * 100 - 1}%` }}
+        >
+          sawn-off · 2×
+        </div>
+      )}
 
-      {/* HP Tube Panels */}
-      <HpTubePanel
+      <SideTokens
         label="RIVAL"
         hp={visual.hp[opp]}
         maxHp={visual.maxHp}
         healCut={visual.healCut[opp]}
+        wins={visual.score[opp]}
         xPct={RIVAL_HP_ANCHOR.x * 100}
         yPct={RIVAL_HP_ANCHOR.y * 100}
-        align="left"
+        tone="red"
       />
-      <HpTubePanel
+      <SideTokens
         label="YOU"
         hp={visual.hp[you]}
         maxHp={visual.maxHp}
         healCut={visual.healCut[you]}
+        wins={visual.score[you]}
         xPct={LOCAL_HP_ANCHOR.x * 100}
         yPct={LOCAL_HP_ANCHOR.y * 100}
-        align="right"
+        tone="warm"
       />
 
-      {/* Rival 4 Item Slots */}
+      {/* Rival items */}
       {RIVAL_ITEM_SLOTS.map((pos, idx) => {
         const item = oppItems[idx];
         const stealable = pickingSteal && item !== undefined && item !== "Lockpick";
@@ -200,33 +236,31 @@ export function TableSpritesLayer({
             onClick={() => {
               if (stealable) onSelectStealSlot?.(idx);
             }}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 flex h-11 w-16 flex-col items-center justify-center border font-mono text-[10px] transition ${
-              item
-                ? stealable
-                  ? "pointer-events-auto cursor-pointer border-[#e5c378] bg-[#2a2114]/95 text-[#eaeaea] ring-2 ring-[#c6a15b]/60 hover:bg-[#3a2d1b]"
-                  : "pointer-events-none border-[#4a3e2c] bg-[#16130f]/90 text-[#c6a15b]"
-                : "pointer-events-none border-[#25201a] bg-[#0e0c0a]/50 text-[#3e382f]"
+            className={`absolute flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition ${
+              stealable
+                ? "pointer-events-auto cursor-pointer drop-shadow-[0_0_10px_rgba(229,195,120,0.9)] hover:scale-110"
+                : "pointer-events-none"
             }`}
             style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
             title={item ? `${item}${stealable ? " (steal)" : ""}` : "Empty slot"}
           >
-            <span className="font-bold tracking-wider">
-              {item ? ITEM_LABELS[item].short : "—"}
-            </span>
-            {item && (
-              <span className="text-[8px] text-[#9a9a9a] uppercase">
-                {ITEM_LABELS[item].name}
-              </span>
+            {item ? (
+              <ItemIcon
+                item={item}
+                className="h-10 w-10 -rotate-6 opacity-85 drop-shadow-[0_5px_4px_rgba(0,0,0,0.85)]"
+              />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full bg-[#2a241c]" />
             )}
           </button>
         );
       })}
 
-      {/* Local Player 4 Item Slots */}
+      {/* Your items */}
       {LOCAL_ITEM_SLOTS.map((pos, idx) => {
         const item = localItems[idx];
         const usable = canAct && !pickingSteal && item !== undefined;
-        const selectedForLockpick = lockpickSlot === idx;
+        const selected = lockpickSlot === idx;
         return (
           <button
             key={`local-slot-${idx}`}
@@ -235,25 +269,33 @@ export function TableSpritesLayer({
             onClick={() => {
               if (usable) onUseItem?.(idx);
             }}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 flex h-14 w-20 flex-col items-center justify-center border font-mono text-xs transition ${
-              selectedForLockpick
-                ? "pointer-events-auto border-[#e5c378] bg-[#362a16] text-[#fff] ring-2 ring-[#e5c378]"
-                : usable
-                  ? "pointer-events-auto cursor-pointer border-[#c6a15b]/70 bg-[#1a1611]/95 text-[#eaeaea] hover:border-[#e5c378] hover:bg-[#2a2218]"
-                  : item
-                    ? "pointer-events-none border-[#3d3426] bg-[#14110d]/85 text-[#8a703f]"
-                    : "pointer-events-none border-[#241f19] bg-[#0d0b09]/55 text-[#38322a]"
+            className={`absolute flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition duration-200 ${
+              usable
+                ? "pointer-events-auto cursor-pointer hover:-translate-y-[60%] hover:scale-110"
+                : "pointer-events-none"
             }`}
             style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
-            title={item ? `${ITEM_LABELS[item].name} kullan` : "Empty slot"}
+            title={item ? `${ITEM_NAMES[item]} kullan` : "Empty slot"}
           >
-            <span className="font-bold tracking-widest">
-              {item ? ITEM_LABELS[item].short : "—"}
-            </span>
-            {item && (
-              <span className="mt-0.5 text-[9px] text-[#c6a15b] uppercase">
-                {ITEM_LABELS[item].name}
-              </span>
+            {item ? (
+              <>
+                {(usable || selected) && (
+                  <span
+                    className="absolute inset-1 rounded-full"
+                    style={{
+                      background: `radial-gradient(circle, rgba(242,196,106,${selected ? 0.5 : 0.22}) 0%, transparent 70%)`,
+                    }}
+                  />
+                )}
+                <ItemIcon
+                  item={item}
+                  className={`relative h-14 w-14 rotate-3 drop-shadow-[0_6px_5px_rgba(0,0,0,0.85)] ${
+                    usable || selected ? "" : "opacity-60"
+                  }`}
+                />
+              </>
+            ) : (
+              <span className="h-2 w-2 rounded-full bg-[#2a241c]" />
             )}
           </button>
         );
