@@ -23,6 +23,8 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | Godot | **4.7.2.stable** (`4.7.2.stable.arch_linux.ed1daf0bf`) | https://docs.godotengine.org/en/stable/ |
 | Node.js | **v24.22.2** | https://nodejs.org/en/about/releases |
 | pnpm | **10.33.2** (kök `package.json` → `packageManager` ile uyumlu) | https://pnpm.io/ |
+| tsx (devDependency) | **4.23.15** | https://www.npmjs.com/package/tsx |
+| near-sandbox ikilisi | **2.14.1** (`contracts/rolet-near/target/debug/build/near-sandbox-*/out/.near/near-sandbox-2.14.1/near-sandbox`) | https://github.com/near/near-sandbox |
 | git | **2.56.0** | https://git-scm.com/docs |
 
 ## Kontrat crate'leri (`contracts/rolet-near/Cargo.toml`)
@@ -48,7 +50,10 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | @near-js/signers | **2.5.1** | https://www.npmjs.com/package/@near-js/signers |
 | @near-js/transactions | **2.5.1** | https://www.npmjs.com/package/@near-js/transactions |
 | @near-js/providers | **2.5.1** | https://www.npmjs.com/package/@near-js/providers |
-| near-api-js (şemsiye paket) | **7.5.3** (`engines: node >= 22.22.2` — ölçülen node 24.22.2 uyumlu) | https://www.npmjs.com/package/near-api-js · https://docs.near.org/build/front-end/near-api-js/quick-reference |
+| @near-js/types | **2.5.1** | https://www.npmjs.com/package/@near-js/types |
+| @near-js/utils | **2.5.1** | https://www.npmjs.com/package/@near-js/utils |
+| tsx (devDependency) | **4.23.15** | https://www.npmjs.com/package/tsx |
+| near-api-js (şemsiye paket) | **kullanılmaz** (`PLAN-F2` §2: doğrudan `@near-js/* 2.5.1` kullanılır; `@meteorwallet/sdk` alt bağımlılığı için `pnpm-workspace.yaml` `overrides` ile tüm `@near-js/*` paketleri tek kopya `2.5.1` olarak kilitlenmiştir) | https://www.npmjs.com/package/near-api-js · https://docs.near.org/build/front-end/near-api-js/quick-reference |
 
 ## Gaz ölçümleri (`VALUES-FIX-05` / `FIX-16`, sandbox 2026-11-14)
 
