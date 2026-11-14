@@ -22,7 +22,7 @@ use near_sdk::{env, near, require, AccountId, Gas, NearToken, Promise};
 pub const LOG_CAP: usize = 32;
 
 /// S-01: rastgele çekiliş içeren metodlar (`reveal`, `fire`, `use_item`) için
-/// minimum ön ödemeli gaz eşiği. Sandbox'ta ölçülen en pahalı dal (~4.1 Tgas)
+/// minimum ön ödemeli gaz eşiği. Sandbox'ta ölçülen en pahalı dal
 /// için >2× güvenlik payı olarak 10 Tgas seçilmiştir.
 pub const MIN_ACTION_GAS: Gas = Gas::from_tgas(10);
 
@@ -271,6 +271,7 @@ impl Contract {
         let key = match_key(&m.players[0], &m.players[1], m.id);
         self.matches.insert(&key, m);
 
+        let mut finished_states: Vec<(AccountId, PlayerState)> = Vec::with_capacity(2);
         for i in 0..2usize {
             let token_id = &m.tokens[i];
             if let Some(mut ch) = self.character.get(token_id) {
@@ -293,8 +294,12 @@ impl Contract {
                 st.losses += 1;
             }
             self.players.insert(account, &st);
-            self.update_leaderboard(account, &st);
+            finished_states.push((account.clone(), st));
         }
+        self.update_leaderboard_batch(&[
+            (&finished_states[0].0, &finished_states[0].1),
+            (&finished_states[1].0, &finished_states[1].1),
+        ]);
 
         // Önce depolama farkını düş, sonra ödülü öde (S-02).
         self.settle_storage(storage_before);

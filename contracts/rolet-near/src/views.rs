@@ -70,6 +70,14 @@ pub struct LeaderboardEntry {
     pub played: u32,
 }
 
+/// `top_scores` içinde tutulan 9 baytlık kompakt sıralama özeti (FIX-F2-6).
+#[derive(BorshSerialize, BorshDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct LeaderboardScore {
+    pub wins: u32,
+    pub losses: u32,
+    pub slot: u8,
+}
+
 /// `get_actions` dönüş zarfı (S-11): `first_seq > since_seq + 1` olduğunda
 /// log penceresi (32) kaymış demektir; istemci `get_match` snapshot'ı ister.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, near_sdk::NearSchema)]
@@ -87,6 +95,29 @@ fn cmp_leaderboard(a: &LeaderboardEntry, b: &LeaderboardEntry) -> Ordering {
         .then_with(|| a.account_id.cmp(&b.account_id))
 }
 
+fn cmp_score(a: &LeaderboardScore, b: &LeaderboardScore) -> Ordering {
+    b.wins
+        .cmp(&a.wins)
+        .then_with(|| a.losses.cmp(&b.losses))
+        .then_with(|| a.slot.cmp(&b.slot))
+}
+
+fn is_strictly_better_score(wins: u32, losses: u32, other: &LeaderboardScore) -> bool {
+    wins > other.wins || (wins == other.wins && losses < other.losses)
+}
+
+fn first_free_slot(scores: &[LeaderboardScore]) -> u8 {
+    let mut used = [false; TOP_LEADERBOARD_CAP];
+    for s in scores {
+        if (s.slot as usize) < TOP_LEADERBOARD_CAP {
+            used[s.slot as usize] = true;
+        }
+    }
+    used.iter()
+        .position(|&u| !u)
+        .expect("top-100 dolu değilken boş slot bulunmalı") as u8
+}
+
 impl Contract {
     fn lookup_match(&self, match_id: u64, players: Option<[AccountId; 2]>) -> Option<Match> {
         let key = match players {
@@ -96,36 +127,82 @@ impl Contract {
         self.matches.get(&key)
     }
 
-    /// Artımlı top-100 sıralama güncellemesi (S-09 / FIX-14).
+    /// Artımlı top-100 sıralama güncellemesi (S-09 / FIX-14 / FIX-F2-6).
     pub(crate) fn update_leaderboard(&mut self, account_id: &AccountId, st: &PlayerState) {
-        let entry = LeaderboardEntry {
-            account_id: account_id.clone(),
-            wins: st.wins,
-            losses: st.losses,
-            played: st.played,
-        };
-        if let Some(pos) = self.top_leaderboard.iter().position(|e| &e.account_id == account_id) {
-            self.top_leaderboard[pos] = entry;
-            self.top_leaderboard.sort_by(cmp_leaderboard);
+        self.update_leaderboard_batch(&[(account_id, st)]);
+    }
+
+    /// Birden fazla oyuncuyu tek `top_scores` okuma/yazmasıyla top-100'e işler (FIX-F2-6).
+    pub(crate) fn update_leaderboard_batch(&mut self, updates: &[(&AccountId, &PlayerState)]) {
+        if updates.is_empty() {
             return;
         }
-        if self.top_leaderboard.len() < TOP_LEADERBOARD_CAP {
-            self.top_leaderboard.push(entry);
-            self.top_leaderboard.sort_by(cmp_leaderboard);
-            return;
-        }
-        if let Some(last) = self.top_leaderboard.last_mut() {
-            if cmp_leaderboard(&entry, last) == Ordering::Less {
-                *last = entry;
-                self.top_leaderboard.sort_by(cmp_leaderboard);
+        let mut scores = self.top_scores.get().unwrap_or_default();
+        let mut scores_dirty = false;
+        for (account_id, st) in updates {
+            if let Some(slot) = self.top_slot_of.get(account_id) {
+                if let Some(s) = scores.iter_mut().find(|s| s.slot == slot) {
+                    if s.wins != st.wins || s.losses != st.losses {
+                        s.wins = st.wins;
+                        s.losses = st.losses;
+                        scores_dirty = true;
+                    }
+                }
+            } else if scores.len() < TOP_LEADERBOARD_CAP {
+                let slot = first_free_slot(&scores);
+                self.top_slots.insert(&slot, account_id);
+                self.top_slot_of.insert(account_id, &slot);
+                scores.push(LeaderboardScore { wins: st.wins, losses: st.losses, slot });
+                scores_dirty = true;
+            } else {
+                if scores_dirty {
+                    scores.sort_by(cmp_score);
+                }
+                if let Some(last) = scores.last().copied() {
+                    let better = if is_strictly_better_score(st.wins, st.losses, &last) {
+                        true
+                    } else if st.wins == last.wins && st.losses == last.losses {
+                        self.top_slots
+                            .get(&last.slot)
+                            .is_some_and(|old_acc| *account_id < &old_acc)
+                    } else {
+                        false
+                    };
+                    if better {
+                        let slot = last.slot;
+                        if let Some(old_acc) = self.top_slots.get(&slot) {
+                            self.top_slot_of.remove(&old_acc);
+                        }
+                        self.top_slot_of.insert(account_id, &slot);
+                        self.top_slots.insert(&slot, account_id);
+                        if let Some(tail) = scores.last_mut() {
+                            *tail = LeaderboardScore { wins: st.wins, losses: st.losses, slot };
+                        }
+                        scores_dirty = true;
+                    }
+                }
             }
+        }
+        if scores_dirty {
+            scores.sort_by(cmp_score);
+            self.top_scores.set(&scores);
         }
     }
 
     /// Hiç tamamlanmış maçı olmayan oyuncu iptalde temizlenirken top-100'den düşürür.
     pub(crate) fn remove_from_leaderboard(&mut self, account_id: &AccountId) {
-        if let Some(pos) = self.top_leaderboard.iter().position(|e| &e.account_id == account_id) {
-            self.top_leaderboard.remove(pos);
+        let Some(slot) = self.top_slot_of.remove(account_id) else {
+            return;
+        };
+        self.top_slots.remove(&slot);
+        let mut scores = self.top_scores.get().unwrap_or_default();
+        if let Some(pos) = scores.iter().position(|s| s.slot == slot) {
+            scores.remove(pos);
+            if scores.is_empty() {
+                self.top_scores.remove();
+            } else {
+                self.top_scores.set(&scores);
+            }
         }
     }
 }
@@ -187,7 +264,23 @@ impl Contract {
     pub fn leaderboard(&self, from: Option<u64>, limit: Option<u64>) -> Vec<LeaderboardEntry> {
         let skip = from.unwrap_or(0) as usize;
         let take = limit.unwrap_or(50).min(TOP_LEADERBOARD_CAP as u64) as usize;
-        self.top_leaderboard.iter().skip(skip).take(take).cloned().collect()
+        let scores = self.top_scores.get().unwrap_or_default();
+        if skip >= scores.len() || take == 0 {
+            return Vec::new();
+        }
+        let mut entries: Vec<LeaderboardEntry> = scores
+            .iter()
+            .filter_map(|s| {
+                self.top_slots.get(&s.slot).map(|account_id| LeaderboardEntry {
+                    account_id,
+                    wins: s.wins,
+                    losses: s.losses,
+                    played: s.wins + s.losses,
+                })
+            })
+            .collect();
+        entries.sort_by(cmp_leaderboard);
+        entries.into_iter().skip(skip).take(take).collect()
     }
 }
 
@@ -413,7 +506,7 @@ mod tests {
             c.update_leaderboard(&acc, &st);
         }
         assert_eq!(c.player_index.len(), 1000);
-        assert_eq!(c.top_leaderboard.len(), TOP_LEADERBOARD_CAP);
+        assert_eq!(c.top_scores.get().unwrap_or_default().len(), TOP_LEADERBOARD_CAP);
 
         let top = c.leaderboard(None, Some(100));
         assert_eq!(top.len(), 100);
@@ -435,7 +528,7 @@ mod tests {
         };
         c.players.insert(&promoted, &st_promoted);
         c.update_leaderboard(&promoted, &st_promoted);
-        assert_eq!(c.top_leaderboard.len(), 100);
+        assert_eq!(c.top_scores.get().unwrap_or_default().len(), 100);
         let top2 = c.leaderboard(None, Some(100));
         assert!(top2.iter().any(|e| e.account_id == promoted && e.wins == 950));
         assert!(!top2.iter().any(|e| e.account_id.as_str() == "p0900.testnet"));

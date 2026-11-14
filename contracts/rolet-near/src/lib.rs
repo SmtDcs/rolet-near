@@ -16,10 +16,10 @@ pub mod views;
 use config::Config;
 use matches::{Match, PlayerState};
 use near_contract_standards::non_fungible_token::{NonFungibleToken, TokenId};
-use near_sdk::collections::{LookupMap, UnorderedSet};
+use near_sdk::collections::{LazyOption, LookupMap, UnorderedSet};
 use near_sdk::{env, near, BorshStorageKey, AccountId, NearToken, PanicOnDefault};
 use nft::CharacterState;
-use views::LeaderboardEntry;
+use views::LeaderboardScore;
 
 /// Kontrat state borsh şeması sürümü (FIX-F2-4).
 pub const STATE_VERSION: u32 = 1;
@@ -55,8 +55,14 @@ pub struct Contract {
     match_id_index: LookupMap<u64, [u8; 32]>,
     /// Leaderboard için oyuncu listesi (T-115; S-02 `assert_solvent` taraması için korunur).
     player_index: UnorderedSet<AccountId>,
-    /// Artımlı güncellenen top-100 sıralama tablosu (S-09 / FIX-14).
-    top_leaderboard: Vec<LeaderboardEntry>,
+    /// Artımlı güncellenen top-100 sıralama tablosu (S-09 / FIX-14 / FIX-F2-6):
+    /// `top_scores` yalnızca 9 baytlık `(wins, losses, slot)` özetini (<1 KB) tutar,
+    /// hesap adları `top_slots` (`LookupMap<u8, AccountId>`) ve `top_slot_of` içinde
+    /// ayrı anahtarlarda saklanır; böylece kök sabit kalır, `settle_storage` tüm
+    /// büyümeyi sayar ve mevcut üyelerin skor güncellemesinde `AccountId` yazılmaz.
+    top_scores: LazyOption<Vec<LeaderboardScore>>,
+    top_slots: LookupMap<u8, AccountId>,
+    top_slot_of: LookupMap<AccountId, u8>,
     /// Durum düzeni sürümü (FIX-F2-4).
     state_version: u32,
 }
@@ -73,6 +79,9 @@ enum StorageKey {
     PlayerIndex,
     ActiveKeys,
     MatchIdIndex,
+    TopScores,
+    TopSlots,
+    TopSlotOf,
 }
 
 #[near]
@@ -101,7 +110,9 @@ impl Contract {
             active_keys: LookupMap::new(StorageKey::ActiveKeys),
             match_id_index: LookupMap::new(StorageKey::MatchIdIndex),
             player_index: UnorderedSet::new(StorageKey::PlayerIndex),
-            top_leaderboard: Vec::new(),
+            top_scores: LazyOption::new(StorageKey::TopScores, None),
+            top_slots: LookupMap::new(StorageKey::TopSlots),
+            top_slot_of: LookupMap::new(StorageKey::TopSlotOf),
             state_version: STATE_VERSION,
         }
     }

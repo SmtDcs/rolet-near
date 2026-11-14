@@ -1751,3 +1751,220 @@ async fn fix_f2_4_migrate_is_private_and_preserves_state() -> Result<(), Box<dyn
 
     Ok(())
 }
+
+/// FIX-F2-6: 100 girişli (64 karakterlik hesap adlı) dolu leaderboard ile
+/// `join` ve `fire` (normal + maç sonu) gaz ölçümü ve `MIN_ACTION_GAS` ≥2× payı doğrulaması.
+#[tokio::test]
+async fn fix_f2_6_full_100_leaderboard_gas_measurement() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+    let root = worker.root_account()?;
+    let owner = worker.dev_create_account().await?;
+    let contract = worker.dev_deploy(&wasm).await?;
+
+    contract
+        .call("new")
+        .args_json(json!({ "owner": owner.id(), "config": Config::default() }))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(5))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let root_len = root.id().as_str().len();
+    let sub_len = 64 - 1 - root_len;
+    let pad = "a".repeat(sub_len - 5);
+
+    let mut accounts = Vec::with_capacity(102);
+    for idx in 0..102usize {
+        let sub_name = format!("p{idx:03}_{pad}");
+        let acc = root
+            .create_subaccount(&sub_name)
+            .initial_balance(WsNearToken::from_near(3))
+            .transact()
+            .await?
+            .into_result()?;
+        assert_eq!(acc.id().as_str().len(), 64, "hesap adı tam 64 karakter olmalı");
+        accounts.push(acc);
+    }
+
+    // 102 hesap paralel gruplar halinde karakter satın alır.
+    let mut tokens = Vec::with_capacity(102);
+    for chunk in accounts.chunks(20) {
+        let mut set = tokio::task::JoinSet::new();
+        for (offset, acc) in chunk.iter().enumerate() {
+            let acc = acc.clone();
+            let cid = contract.id().clone();
+            set.spawn(async move {
+                let tok: String = acc
+                    .call(&cid, "buy_character")
+                    .args_json(json!({ "kind": Kind::Kuleci }))
+                    .deposit(WsNearToken::from_near(1))
+                    .transact()
+                    .await?
+                    .into_result()?
+                    .json()?;
+                Ok::<(usize, String), Box<dyn std::error::Error + Send + Sync>>((offset, tok))
+            });
+        }
+        let mut batch_tokens = vec![String::new(); chunk.len()];
+        while let Some(res) = set.join_next().await {
+            let (offset, tok) = res.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+            batch_tokens[offset] = tok;
+        }
+        tokens.extend(batch_tokens);
+    }
+    let expected_ops = 102u128 * near_sdk::NearToken::from_millinear(50).as_yoctonear();
+
+    // İlk 100 hesap 50 eşleşmede `join` yapar -> leaderboard 100 adet 64 karakterli girişle dolar.
+    let mut join_99_gas = 0u64;
+    let mut join_100_gas = 0u64;
+    for chunk_idx in (0..50usize).step_by(10) {
+        let end = (chunk_idx + 10).min(50);
+        let mut set = tokio::task::JoinSet::new();
+        for pair in chunk_idx..end {
+            let a = accounts[pair * 2].clone();
+            let b = accounts[pair * 2 + 1].clone();
+            let ta = tokens[pair * 2].clone();
+            let tb = tokens[pair * 2 + 1].clone();
+            let cid = contract.id().clone();
+            let match_id = 1000 + pair as u64;
+            set.spawn(async move {
+                let ra = a
+                    .call(&cid, "join")
+                    .args_json(json!({
+                        "match_id": U64(match_id),
+                        "opponent": b.id(),
+                        "commit": compute_commitment([0x11u8; 32], a.id().as_str(), match_id),
+                        "token_id": ta,
+                    }))
+                    .transact()
+                    .await?
+                    .into_result()?;
+                let rb = b
+                    .call(&cid, "join")
+                    .args_json(json!({
+                        "match_id": U64(match_id),
+                        "opponent": a.id(),
+                        "commit": compute_commitment([0x22u8; 32], b.id().as_str(), match_id),
+                        "token_id": tb,
+                    }))
+                    .transact()
+                    .await?
+                    .into_result()?;
+                Ok::<(usize, u64, u64), Box<dyn std::error::Error + Send + Sync>>((
+                    pair,
+                    ra.total_gas_burnt.as_gas(),
+                    rb.total_gas_burnt.as_gas(),
+                ))
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            let (pair, ga, gb) = res.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+            if pair == 49 {
+                join_99_gas = ga;
+                join_100_gas = gb;
+            }
+        }
+    }
+
+    let lb: Vec<LeaderboardEntry> = contract
+        .view("leaderboard")
+        .args_json(json!({ "from": 0, "limit": 100 }))
+        .await?
+        .json()?;
+    assert_eq!(lb.len(), 100, "leaderboard 100 girişle dolu olmalı");
+    assert!(lb.iter().all(|e| e.account_id.as_str().len() == 64));
+
+    // Dolu (100 girişli) leaderboard varken 101. oyuncunun `join` gazını ölç.
+    let join_full_res = accounts[100]
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(1050),
+            "opponent": accounts[101].id(),
+            "commit": compute_commitment([0x33u8; 32], accounts[100].id().as_str(), 1050),
+            "token_id": tokens[100],
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    let join_full_gas = join_full_res.total_gas_burnt.as_gas();
+
+    // 50. maçı (match_id = 1049, p098 vs p099) tam oynayarak `fire` normal + maç sonu gazını ölç.
+    let mid = 1049u64;
+    let p_a = &accounts[98];
+    let p_b = &accounts[99];
+    p_a.call(contract.id(), "reveal")
+        .args_json(json!({ "match_id": U64(mid), "secret": Base64VecU8([0x11u8; 32].to_vec()) }))
+        .transact()
+        .await?
+        .into_result()?;
+    p_b.call(contract.id(), "reveal")
+        .args_json(json!({ "match_id": U64(mid), "secret": Base64VecU8([0x22u8; 32].to_vec()) }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let mut mv: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(mid) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    let mut max_fire_normal = 0u64;
+    let mut match_end_fire_gas = 0u64;
+    let mut steps = 0u32;
+    while mv.status == Status::Active {
+        steps += 1;
+        assert!(steps <= 160);
+        let actor = if mv.game.turn == 0 { p_a } else { p_b };
+        let res = actor
+            .call(contract.id(), "fire")
+            .args_json(json!({ "match_id": U64(mid), "target": Target::Opponent }))
+            .transact()
+            .await?
+            .into_result()?;
+        let g = res.total_gas_burnt.as_gas();
+        let actions: Vec<Action> = res.json()?;
+        if actions.iter().any(|a| matches!(a, Action::MatchEnded { .. })) {
+            match_end_fire_gas = match_end_fire_gas.max(g);
+        } else {
+            max_fire_normal = max_fire_normal.max(g);
+        }
+        mv = contract
+            .view("get_match")
+            .args_json(json!({ "match_id": U64(mid) }))
+            .await?
+            .json::<Option<MatchView>>()?
+            .unwrap();
+    }
+    assert!(match_end_fire_gas > 0);
+    let lb_after: Vec<LeaderboardEntry> = contract
+        .view("leaderboard")
+        .args_json(json!({ "from": 0, "limit": 10 }))
+        .await?
+        .json()?;
+    assert_eq!(lb_after[0].wins, 1);
+
+    let worst = join_99_gas
+        .max(join_100_gas)
+        .max(join_full_gas)
+        .max(max_fire_normal)
+        .max(match_end_fire_gas);
+    println!(
+        "FULL_LB_GAS join_99={join_99_gas} join_100={join_100_gas} join_full={join_full_gas} \
+         fire_normal_max={max_fire_normal} fire_match_end={match_end_fire_gas}"
+    );
+    assert!(
+        worst * 2 <= MIN_ACTION_GAS.as_gas(),
+        "dolu leaderboard en kötü gaz ({worst}) >= MIN_ACTION_GAS / 2 ({})",
+        MIN_ACTION_GAS.as_gas() / 2
+    );
+    assert_sandbox_solvent(&contract, expected_ops, 0).await?;
+
+    Ok(())
+}

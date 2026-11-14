@@ -67,8 +67,11 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | `fire` (maç sonu + transfer) | **4.423 Tgas** | `RoundEnded` + `MatchEnded` + budama + ödül transferi (`Promise`) |
 | `claim_timeout` (`Revealing`) | **4.1 Tgas** | Reveal timeout + silme + iade/ceza |
 | `claim_timeout` (`Active`) | **4.2 Tgas** | Turn timeout + `finish_match` + ödül transferi |
+| `join` (dolu top-100, 64B hesap adları) | **3.686 Tgas** (100. giriş) / **3.271 Tgas** (100+ dolu) | `top_scores` (`LazyOption`, <1 KB) + `top_slots`/`top_slot_of` (FIX-F2-6) |
+| `fire` (normal atış, dolu top-100) | **3.227 Tgas** | `top_scores` kökten ayrı olduğu için normal `fire` etkilenmez (FIX-F2-6) |
+| `fire` (maç sonu + transfer, dolu 100×64B) | **4.964 Tgas** (`4_963_631_872_004`) | `finish_match` + tek `top_scores` toplu güncellemesi (`update_leaderboard_batch`) |
 
-- **Güvenlik payı (`MIN_ACTION_GAS`):** Kontrat eşiği `10 Tgas`. Ölçülen en pahalı aksiyon dalı (`4.423 Tgas`) eşik altında **2.26×** güvenlik payına sahiptir (`4.423 × 2 = 8.846 Tgas <= 10 Tgas`).
+- **Güvenlik payı (`MIN_ACTION_GAS`):** Kontrat eşiği `10 Tgas`. Boş listede en pahalı dal `4.423 Tgas` (**2.26×** pay); 100 girişli (64 karakterlik hesap adlı) dolu leaderboard ile ölçülen en pahalı dal (`4.964 Tgas`) ise eşik altında **2.01×** güvenlik payına sahiptir (`4.964 × 2 = 9.927 Tgas <= 10 Tgas`).
 
 ## Notlar
 
