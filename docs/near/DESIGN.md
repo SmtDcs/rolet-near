@@ -143,7 +143,7 @@ Parametreler (kontrat sabitleri, ayarlanabilir; Buckshot'tan teyide göre günce
 
 1. Hamle sahibi sıfır veya daha fazla eşya kullanır, sonra ateş eder. Ateş etmeden sıra bitmez (eşya kullanıp beklemek yok; süre aşımı = kayıp).
 2. Ateş sonuçları §2.3'teki tablo ile birebir.
-3. Testere aktifken yapılan ilk atış 2 hasar verir (dolu ise), atıştan sonra testere sıfırlanır. Testere aktifken tekrar testere kullanılamaz. Bira ile fişek atılırsa testere **aktif kalır**. **[KARAR — Buckshot davranışı doğrulanacak]**
+3. Testere aktifken yapılan ilk atış 2 hasar verir (dolu ise), atıştan sonra testere sıfırlanır. Testere aktifken tekrar testere kullanılamaz. Bira ile ara fişek atılırsa sıra ve testere korunur; son fişek atılırsa tur biter (sıra geçer, rakip kelepçeliyse atlanır), testere sıfırlanır ve ardından yeni yükleme yapılır.
 4. Kelepçe: rakip kelepçeliyse veya bu sıra zincirinde kelepçesi yeni kırıldıysa kullanılamaz. Sıra kelepçeli oyuncuya geçecekken o sıra atlanır ve kelepçe kırılır; sıra tekrar kullanana döner.
 5. Boşla kendine ateş edince sıra kalır; kelepçe/testere durumları değişmez (testere hariç: atış yapıldığı için sıfırlanır).
 6. Can 0 → round biter. Round bitince tüm eşyalar, testere, kelepçe sıfırlanır; yeni round yeni canlarla ve yeni yüklemeyle başlar.

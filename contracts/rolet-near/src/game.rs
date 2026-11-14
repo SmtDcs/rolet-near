@@ -497,6 +497,20 @@ fn apply_damage(
     Some(winner)
 }
 
+/// Sıra geçişi (`fire` ve son fişekte `Flask` ortak yolu — G-04): sırayı rakibe
+/// geçirir; rakip kelepçeliyse sırası atlanır, kelepçe kırılır ve sıra kullanana döner.
+fn end_turn(state: &mut GameState, actor: usize, actions: &mut Vec<Action>) {
+    let next = 1 - actor;
+    state.turn = next as u8;
+    state.shackle_broke_this_turn = false;
+    if state.shackled == Some(next as u8) {
+        actions.push(Action::TurnSkipped { player: next as u8 });
+        state.shackled = None;
+        state.shackle_broke_this_turn = true;
+        state.turn = actor as u8;
+    }
+}
+
 /// Ateş etme (T-104, DESIGN §3.2 kural 1–7). `actor` sıra sahibi olmalıdır;
 /// tüm durum geçişleri `Action` olarak döner (istemci animasyon kuyruğu §4.8).
 ///
@@ -539,15 +553,7 @@ pub fn fire(
         return Ok(actions);
     }
     if !(shell == Shell::Blank && target == Target::SelfTarget) {
-        let next = 1 - actor;
-        state.turn = next as u8;
-        state.shackle_broke_this_turn = false;
-        if state.shackled == Some(next as u8) {
-            actions.push(Action::TurnSkipped { player: next as u8 });
-            state.shackled = None;
-            state.shackle_broke_this_turn = true;
-            state.turn = actor as u8;
-        }
+        end_turn(state, actor, &mut actions);
     }
     if state.load.is_empty() {
         reload(state, cfg, src, &mut actions);
@@ -701,8 +707,10 @@ fn apply_item(
             state.load.advance(shell);
             actions.push(item_used(ItemResult::Ejected { shell }));
             actions.push(Action::Ejected { shell });
-            // Son fişekse yeni yükleme; testere etkilenmez (kural 3).
+            // Son fişekse tur biter: testere sıfırlanır, sıra geçer (G-04), sonra yeni yükleme.
             if state.load.is_empty() {
+                state.saw_active = false;
+                end_turn(state, actor, &mut actions);
                 reload(state, cfg, src, &mut actions);
             }
         }
@@ -1384,15 +1392,27 @@ mod tests {
         assert_eq!(st.load.remaining, 1);
         assert_eq!(st.load.blank_left, 0);
         assert!(st.saw_active); // bira testereyi düşürmez (kural 3)
-        // Son fişek: yeni yükleme + R2 dağıtımı.
+        // Son fişek: tur biter, testere sıfırlanır, yeni yükleme + R2 dağıtımı (G-04).
         let mut src2 = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
         let mut st2 = item_state(2, Load::new(1, 1), vec![Item::Flask]);
         st2.load = Load::new(0, 1);
+        st2.saw_active = true;
         let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
         assert_eq!(actions2.len(), 5);
         assert_eq!(actions2[2], Action::LoadStarted { live: 1, blank: 1, total: 2 });
         assert_eq!(st2.load.remaining, 2);
         assert_eq!(st2.items[0], vec![Item::Loupe, Item::Loupe]);
+        assert_eq!(st2.turn, 1);
+        assert!(!st2.saw_active);
+
+        // Son fişekte rakip kelepçeliyse atlanıp kullanana döner.
+        let mut src_shackle = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut st_sh = item_state(2, Load::new(0, 1), vec![Item::Flask]);
+        st_sh.shackled = Some(1);
+        let actions_sh = use_at(&mut st_sh, 0, &mut src_shackle).unwrap();
+        assert!(actions_sh.contains(&Action::TurnSkipped { player: 1 }));
+        assert_eq!(st_sh.turn, 0);
+        assert_eq!(st_sh.shackled, None);
         // Boş tüfekle red.
         let mut src3 = ScriptedSource::new(vec![]);
         let mut st3 = item_state(2, Load::new(0, 0), vec![Item::Flask]);
