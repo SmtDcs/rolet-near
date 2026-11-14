@@ -14,7 +14,10 @@ pub mod treasury;
 pub mod views;
 
 use config::Config;
-use near_sdk::{env, near, AccountId, NearToken, PanicOnDefault};
+use near_contract_standards::non_fungible_token::{NonFungibleToken, TokenId};
+use near_sdk::collections::LookupMap;
+use near_sdk::{env, near, BorshStorageKey, AccountId, NearToken, PanicOnDefault};
+use nft::CharacterState;
 
 /// Kontrat durumu (DESIGN §4.5). Maç, oyuncu ve NFT koleksiyonları ilgili
 /// görevlerde (T-109/T-110) eklenir.
@@ -31,6 +34,21 @@ pub struct Contract {
     ops_balance: NearToken,
     /// Duraklatıldı; yeni maç kabulü T-110'da buna bağlanır.
     paused: bool,
+    /// NEP-171/177/181 karakter koleksiyonu (T-109).
+    tokens: NonFungibleToken,
+    /// Token başına oyun durumu: kind, durability, maç kilidi.
+    character: LookupMap<TokenId, CharacterState>,
+    /// Basılan token sayacı; `token_id = "<kind>:<nonce>"`.
+    mint_nonce: u64,
+}
+
+/// near-sdk koleksiyonları için önekler (birbirinden benzersiz).
+#[derive(BorshStorageKey, near_sdk::borsh::BorshSerialize)]
+enum StorageKey {
+    Tokens,
+    TokenMetadata,
+    TokensPerOwner,
+    Character,
 }
 
 #[near]
@@ -39,11 +57,20 @@ impl Contract {
     #[init]
     pub fn new(owner: AccountId, config: Config) -> Self {
         Self {
-            owner,
+            owner: owner.clone(),
             config,
             treasury: NearToken::ZERO,
             ops_balance: NearToken::ZERO,
             paused: false,
+            tokens: NonFungibleToken::new(
+                StorageKey::Tokens,
+                owner,
+                Some(StorageKey::TokenMetadata),
+                Some(StorageKey::TokensPerOwner),
+                None::<Vec<u8>>,
+            ),
+            character: LookupMap::new(StorageKey::Character),
+            mint_nonce: 0,
         }
     }
 

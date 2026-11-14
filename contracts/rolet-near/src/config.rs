@@ -8,7 +8,9 @@ use near_sdk::NearToken;
 /// Round başına parametreler (DESIGN §3.1 tablosu; index = round - 1).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub struct RoundConfig {
     /// Round başlangıç canı.
@@ -22,7 +24,9 @@ pub struct RoundConfig {
 /// Kontrat sabitleri (DESIGN §3.1, §4.9 testnet varsayılanları).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq,
+    near_sdk::NearSchema,
 )]
+#[abi(borsh, json)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Config {
     /// 3 round tablosu.
