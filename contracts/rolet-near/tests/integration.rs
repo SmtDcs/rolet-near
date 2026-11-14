@@ -1705,3 +1705,54 @@ async fn fix_f2_1_function_call_access_key_flow() -> Result<(), Box<dyn std::err
 
     Ok(())
 }
+
+/// FIX-F2-4: `migrate` yalnızca kontratın kendisi (`#[private]`) tarafından çağrılabilir,
+/// harici hesaplar reddedilir ve state + `state_version` korunur.
+#[tokio::test]
+async fn fix_f2_4_migrate_is_private_and_preserves_state() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+    let owner = worker.dev_create_account().await?;
+    let stranger = worker.dev_create_account().await?;
+    let contract = worker.dev_deploy(&wasm).await?;
+
+    contract
+        .call("new")
+        .args_json(json!({ "owner": owner.id(), "config": Config::default() }))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(2))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let v0: u32 = contract.view("get_state_version").await?.json()?;
+    assert_eq!(v0, rolet_near::STATE_VERSION);
+
+    // Harici hesap #[private] nedeniyle reddedilmeli.
+    let stranger_res = stranger
+        .call(contract.id(), "migrate")
+        .transact()
+        .await?;
+    assert!(
+        stranger_res.is_failure(),
+        "harici hesap migrate çağırabilmemeli"
+    );
+
+    // Kontratın kendi hesabı migrate çağırabilmeli ve treasury korunmalı.
+    contract
+        .as_account()
+        .call(contract.id(), "migrate")
+        .transact()
+        .await?
+        .into_result()?;
+    let v1: u32 = contract.view("get_state_version").await?.json()?;
+    assert_eq!(v1, rolet_near::STATE_VERSION);
+    let treasury: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
+    assert_eq!(treasury, near_sdk::NearToken::from_near(2));
+
+    Ok(())
+}

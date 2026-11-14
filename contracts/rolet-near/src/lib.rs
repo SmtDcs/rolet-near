@@ -21,6 +21,9 @@ use near_sdk::{env, near, BorshStorageKey, AccountId, NearToken, PanicOnDefault}
 use nft::CharacterState;
 use views::LeaderboardEntry;
 
+/// Kontrat state borsh şeması sürümü (FIX-F2-4).
+pub const STATE_VERSION: u32 = 1;
+
 /// Kontrat durumu (DESIGN §4.5). Maç, oyuncu ve NFT koleksiyonlarının
 /// metodları `nft.rs` (T-109) ve `matches.rs` (T-110..) modüllerindedir.
 #[near(contract_state)]
@@ -54,6 +57,8 @@ pub struct Contract {
     player_index: UnorderedSet<AccountId>,
     /// Artımlı güncellenen top-100 sıralama tablosu (S-09 / FIX-14).
     top_leaderboard: Vec<LeaderboardEntry>,
+    /// Durum düzeni sürümü (FIX-F2-4).
+    state_version: u32,
 }
 
 /// near-sdk koleksiyonları için önekler (birbirinden benzersiz).
@@ -97,7 +102,27 @@ impl Contract {
             match_id_index: LookupMap::new(StorageKey::MatchIdIndex),
             player_index: UnorderedSet::new(StorageKey::PlayerIndex),
             top_leaderboard: Vec::new(),
+            state_version: STATE_VERSION,
         }
+    }
+
+    /// Durum şeması sürüm göçü iskeleti (FIX-F2-4).
+    /// Kırıcı borsh düzeni değişikliğinde yeni hesaba yeniden deploy yapılır veya
+    /// önceki düzeni okuyup güncel `STATE_VERSION`'a taşıyan göç dalı buraya eklenir.
+    #[init(ignore_state)]
+    #[private]
+    pub fn migrate() -> Self {
+        let mut state: Contract = env::state_read().expect("state must exist");
+        if state.state_version == STATE_VERSION {
+            return state;
+        }
+        state.state_version = STATE_VERSION;
+        state
+    }
+
+    /// Mevcut kontrat state sürümünü döner (FIX-F2-4).
+    pub fn get_state_version(&self) -> u32 {
+        self.state_version
     }
 
     pub fn set_config(&mut self, config: Config) {
@@ -188,6 +213,29 @@ mod tests {
         assert_eq!(c.treasury, NearToken::ZERO);
         assert_eq!(c.ops_balance, NearToken::ZERO);
         assert!(!c.paused);
+        assert_eq!(c.state_version, STATE_VERSION);
+        assert_eq!(c.get_state_version(), STATE_VERSION);
+    }
+
+    /// FIX-F2-4: `migrate` mevcut state'i korur ve `state_version`'ı günceller.
+    #[test]
+    fn migrate_preserves_state_and_updates_version() {
+        let mut c = setup("owner.testnet", "owner.testnet");
+        c.treasury = NearToken::from_near(3);
+        c.state_version = 0;
+        env::state_write(&c);
+
+        let ctx = VMContextBuilder::new()
+            .current_account_id("contract.testnet".parse().unwrap())
+            .predecessor_account_id("contract.testnet".parse().unwrap())
+            .build();
+        near_sdk::testing_env!(ctx);
+
+        let migrated = Contract::migrate();
+        assert_eq!(migrated.state_version, STATE_VERSION);
+        assert_eq!(migrated.get_state_version(), STATE_VERSION);
+        assert_eq!(migrated.owner, "owner.testnet".parse::<AccountId>().unwrap());
+        assert_eq!(migrated.treasury, NearToken::from_near(3));
     }
 
     /// T-108: owner config'i değiştirir, pause/unpause çalışır.
