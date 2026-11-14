@@ -88,7 +88,7 @@ Sonradan eklenenler ("Double or Nothing" güncellemesi):
 | Kullan-at telefon | Gelecekteki rastgele bir fişeğin sırasını ve türünü kullanana söyler ("3. fişek… dolu"). Tek fişek kaldıysa bilgi vermez. **[EMİN DEĞİLİM: mevcut fişeği hariç tutuyor mu — muhtemelen evet]** |
 | İnverter | **Mevcut fişeğin** kutbunu çevirir (dolu↔boş). Açıklanan sayılar güncellenmez. |
 | Adrenalin | Rakibin bir eşyasını çalar ve **hemen kullanır**. Adrenalin çalınamaz. Seçim için süre sınırı var. **[EMİN DEĞİLİM: süre]** |
-| Son kullanma tarihi geçmiş ilaç | Şans: %50 ihtimalle +2 can, aksi halde −1 can (öldürebilir). |
+| Son kullanma tarihi geçmiş ilaç | Şans: %40 ihtimalle +2 can, aksi halde −1 can (öldürebilir) (`Config.tincture_good_pct`, varsayılan 40). |
 
 ### 2.5 Round'a özel kurallar
 - **Round 1:** eşya yok, düşük can, saf şans + boşla-kendine-ateş kararı.
@@ -122,19 +122,20 @@ Ses tasarımının ana fikri: neredeyse sessiz ortam + çok yakın, kuru, yükse
 ### 3.1 Maç formatı (PvP)
 Buckshot'ın hikâye modu insan-vs-bot. Rolet iki insan oyuncu, dolayısıyla:
 
-- **[KARAR] Maç = 3 round, round başına Buckshot parametreleri.** Round'u kazanan 1 puan alır; **2 puana ulaşan maçı kazanır** (3. round her zaman oynanmaz). Böylece R1 (şans), R2 (eşyalar), R3 (kalıcı ölüm eşiği) tırmanışı korunur ve maç süresi ~4–8 dk kalır.
-- Alternatif (demo için): `quick` modu — tek round, R3 kuralları. Kontrat `MatchConfig` ile her iki modu destekler; varsayılan best-of-3.
+- **[KARAR — Değerler Rolet, mekanik Buckshot]** Oyun değerleri orijinal Rolet (Solana) sürümünden alınır, oynanış mekanikleri ve best-of-3 round yapısı Buckshot Roulette'ten gelir (`REFERENCE-CHECK.md` yalnızca Buckshot mekanik referansı olarak kalır).
+- **[KARAR] Maç = 3 round.** Round'u kazanan 1 puan alır; **2 puana ulaşan maçı kazanır** (3. round her zaman oynanmaz). Böylece R1 (eşyasız şans), R2 (eşyalar), R3 (tüm eşyalar + iyileşme kesilmesi) tırmanışı korunur ve maç süresi ~4–8 dk kalır.
+- Alternatif (demo için): `quick` modu — tek round, R3 kuralları. Kontrat `Config` ile ayarlanabilir; varsayılan best-of-3.
 
-Parametreler (kontrat sabitleri, ayarlanabilir; Buckshot'tan teyide göre güncellenecek):
+Parametreler (`Config` varsayılanları, Rolet değerleri):
 
 | Round | Başlangıç canı | Yükleme başına eşya | İyileşme kesme eşiği |
 |---|---|---|---|
-| 1 | 2 | 0 | yok |
-| 2 | 4 | 2 | yok |
-| 3 | 6 | 4 | can ≤ 2 olunca iyileşme kapalı |
+| 1 | 4 | 0 | yok |
+| 2 | 4 | 4 | yok |
+| 3 | 4 | 4 | can ≤ 2 olunca iyileşme kapalı (`heal_cut_at: Some(2)`) |
 
 - Eşya slotu: oyuncu başına 8. Dolu slot varsa dağıtımda fazla eşya düşer.
-- Fişek yüklemesi: toplam 2–8, dolu ∈ [1, toplam−1], dağılım ortaya yakın (§4.6'da algoritma).
+- Fişek yüklemesi: tabanca her zaman 8 gözlü (`Config.load_size = 8`); her yüklemede dolu sayısı `ChainSource` rastgeleliğiyle `Config.min_live..=Config.max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır. Seçilen `(live, blank)` sayıları yükleme anında açıkça duyurulur (`MatchView` + `LoadStarted`), sıra ise gizli kalır ve lazy draw ile çekilir (§4.6).
 - **[KARAR] Sıra kuralları:** R1'in ilk sırası rastgele. Yeni yüklemede sıra, kimde kaldıysa onda devam eder. Yeni round'u bir önceki round'u **kaybeden** başlatır.
 - **[KARAR] Hamle süresi:** 45 s. Süre biten oyuncuya karşı `claim_timeout` çağrılabilir → **maçı** kaybeder. (Buckshot'ta yok; zincirde terk eden oyuncuya karşı zorunlu.)
 - Kazanma ödülü: kontrattaki treasury'den sabit NEAR.
@@ -382,10 +383,10 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 - v2 fikri (uygulanmaz, sadece belgelenir): iki taraflı parça-sır protokolü veya TEE tabanlı bir "krupiye" ajanı ile gerçek özel bilgi.
 - Not: `Flask` ile atılan fişek zaten herkese açık; `Magnet` kimseye bilgi vermez ama `fixed`'i değiştirir (çekip çevirir) — rakip zinciri okuyorsa öğrenebilir, aynı v1 sınırı.
 
-Yükleme sayısı üretimi (`Config`'ten ayarlanabilir):
-R1'de sabit sıra `r1_loads` (`[(1, 2), (3, 2)]`, sonrası `total ≤ 4`), R2 ilk yükü `r2_first_load` (`Some((1, 1))`), diğer tüm yüklerde DoN formülü: `total = 2 + r % 7` (2–8), `live = max(1, total/2)` (her zaman `1 ≤ live ≤ blank`).
+Yükleme sayısı üretimi (`Config`'ten ayarlanabilir, Rolet varsayılanları):
+Tabanca her zaman `load_size` gözlüdür (varsayılan `8`); her yüklemede dolu sayısı `ChainSource` ile `min_live..=max_live` (varsayılan `2..=6`, en az 2 kuru sıkı) aralığından seçilir, kalanlar kuru sıkıdır (`blank = load_size - live`). Seçilen sayılar `MatchView` ve `Action::LoadStarted` üzerinden iki oyuncuya açıkça duyurulur; sıra ise gizli kalır ve atış/eşya anında lazy draw ile çekilir.
 
-Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_load` kadar eşit ağırlıklı çekilir (varsayılan: R2'de hikâye beşlisi `[Loupe, Pipe, Flask, Shackle, Hacksaw]`, R3'te 9 eşyanın tamamı — DoN dörtlüsü dahil [KARAR]), slot dolunca durur.
+Eşya dağıtımı: `Config::rounds[round - 1].item_bag` içinden `items_per_load` kadar (R1: 0, R2: 4, R3: 4) eşit ağırlıklı çekilir (varsayılan: R2'de hikâye beşlisi `[Loupe, Pipe, Flask, Shackle, Hacksaw]`, R3'te 9 eşyanın tamamı — DoN dörtlüsü dahil [KARAR]), slot dolunca durur.
 
 ### 4.7 Kontrat metodları
 

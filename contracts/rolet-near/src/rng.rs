@@ -188,4 +188,71 @@ mod tests {
         assert_ne!(commitment(secret, &alice, 7), commitment(secret, &bob, 7));
         assert_ne!(commitment(secret, &alice, 7), commitment(secret, &alice, 8));
     }
+
+    /// EK KARAR: ChainSource ile 10 000 tohumda 8 gözlü tabanca sınırları (`2..=6` dolu,
+    /// `2..=6` boş), yükleme anında sıranın gizli kalması ve atış anında lazy draw ile
+    /// çekilen fişeklerin duyurulan `(live, blank)` sayılarıyla birebir eşleşmesi.
+    #[test]
+    fn chain_source_new_load_and_lazy_draw_match_across_10000_seeds() {
+        use crate::config::Config;
+        use crate::game::new_load;
+
+        let cfg = Config::default();
+        let mut seen_live = [false; 9];
+
+        for seed_num in 0..10_000u64 {
+            if seed_num % 250 == 0 {
+                // Her blok penceresinde mock VM gaz sayacını yenile ve blok tohumunu değiştir.
+                let mut block_seed = [0xA5u8; 32];
+                block_seed[..8].copy_from_slice(&seed_num.to_le_bytes());
+                set_block_seed(block_seed);
+            }
+            let mut match_seed = [0u8; 32];
+            match_seed[..8].copy_from_slice(&seed_num.to_le_bytes());
+            match_seed[8..16].copy_from_slice(&seed_num.wrapping_mul(0x9E37_79B9_7F4A_7C15).to_le_bytes());
+
+            let mut nonce = 0u64;
+            let mut load = {
+                let mut src = ChainSource::new(match_seed, &mut nonce);
+                new_load(&cfg, &mut src)
+            };
+
+            assert_eq!(nonce, 1, "yalnızca live sayısı çekilmiş olmalı");
+            assert_eq!(load.remaining, 8);
+            assert!(
+                load.announced_live >= cfg.min_live && load.announced_live <= cfg.max_live,
+                "live={} aralık dışı (seed {seed_num})",
+                load.announced_live
+            );
+            assert_eq!(load.announced_blank, 8 - load.announced_live);
+            assert!(load.announced_blank >= 2 && load.announced_blank <= 6);
+            assert!(load.fixed.iter().all(|s| s.is_none()), "sıra yüklemede gizli kalmalı");
+            seen_live[load.announced_live as usize] = true;
+
+            let expected_live = load.announced_live;
+            let expected_blank = load.announced_blank;
+            let mut drawn_live = 0u8;
+            let mut drawn_blank = 0u8;
+
+            {
+                let mut src = ChainSource::new(match_seed, &mut nonce);
+                while !load.is_empty() {
+                    let shell = load.current(&mut src).unwrap();
+                    load.advance(shell);
+                    match shell {
+                        Shell::Live => drawn_live += 1,
+                        Shell::Blank => drawn_blank += 1,
+                    }
+                }
+            }
+
+            assert_eq!(drawn_live, expected_live, "seed {seed_num}");
+            assert_eq!(drawn_blank, expected_blank, "seed {seed_num}");
+            assert_eq!(nonce, 9, "1 load + 8 lazy draw = 9 nonce");
+        }
+
+        for live in cfg.min_live..=cfg.max_live {
+            assert!(seen_live[live as usize], "live={live} 10000 tohumda görülmedi");
+        }
+    }
 }

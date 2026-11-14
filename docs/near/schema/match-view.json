@@ -36,13 +36,17 @@
       ]
     ],
     "load": {
-      "announced_live": 2,
-      "announced_blank": 2,
-      "remaining": 3,
-      "live_left": 2,
-      "blank_left": 1,
+      "announced_live": 5,
+      "announced_blank": 3,
+      "remaining": 7,
+      "live_left": 4,
+      "blank_left": 3,
       "fixed": [
         "Live",
+        null,
+        null,
+        null,
+        null,
         null,
         null
       ]
@@ -50,8 +54,7 @@
     "turn": 0,
     "shackled": null,
     "shackle_broke_this_turn": false,
-    "saw_active": false,
-    "round_load": 0
+    "saw_active": false
   },
   "reveal_deadline_ms": 1731590060000,
   "deadline_ms": 1731590105000,
@@ -60,9 +63,9 @@
   "log": [
     {
       "kind": "LoadStarted",
-      "live": 2,
-      "blank": 2,
-      "total": 4
+      "live": 5,
+      "blank": 3,
+      "total": 8
     },
     {
       "kind": "ItemsDealt",

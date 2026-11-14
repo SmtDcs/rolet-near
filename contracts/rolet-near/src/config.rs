@@ -48,16 +48,18 @@ pub struct Config {
     pub durability: u8,
     /// Önerilen function-call allowance — DESIGN §4.9: 0.5 NEAR.
     pub allowance_hint: NearToken,
-    /// Tincture iyi yolu olasılığı (yüzde) — DESIGN §2.4: %40 [T-001'de teyit edilecek].
+    /// Tincture iyi yolu olasılığı (yüzde) — Rolet varsayılanı: %40.
     pub tincture_good_pct: u32,
     /// Oyuncu başına eşya slotu — DESIGN §3.1: 8.
     pub max_items: u8,
     /// Yeni maç kabulü için gereken minimum treasury bakiyesi (DESIGN §4.7).
     pub min_treasury: NearToken,
-    /// R1 sabit yükleme sırası `(dolu, boş)` — Buckshot hikâye modu (G-03).
-    pub r1_loads: Vec<(u8, u8)>,
-    /// R2 ilk yüklemesi `(dolu, boş)` (opsiyonel; `Some((1, 1))`, G-03).
-    pub r2_first_load: Option<(u8, u8)>,
+    /// Her yüklemedeki toplam fişek/göz sayısı — Rolet: 8.
+    pub load_size: u8,
+    /// Her yüklemedeki minimum dolu fişek sayısı (`ChainSource` aralığı alt sınırı, vars. 2).
+    pub min_live: u8,
+    /// Her yüklemedeki maksimum dolu fişek sayısı (`ChainSource` aralığı üst sınırı, vars. 6).
+    pub max_live: u8,
 }
 
 impl Default for Config {
@@ -65,14 +67,14 @@ impl Default for Config {
         Self {
             rounds: vec![
                 RoundConfig {
-                    start_hp: 2,
+                    start_hp: 4,
                     items_per_load: 0,
                     heal_cut_at: None,
                     item_bag: vec![],
                 },
                 RoundConfig {
                     start_hp: 4,
-                    items_per_load: 2,
+                    items_per_load: 4,
                     heal_cut_at: None,
                     item_bag: vec![
                         Item::Loupe,
@@ -83,7 +85,7 @@ impl Default for Config {
                     ],
                 },
                 RoundConfig {
-                    start_hp: 6,
+                    start_hp: 4,
                     items_per_load: 4,
                     heal_cut_at: Some(2),
                     item_bag: vec![
@@ -106,11 +108,12 @@ impl Default for Config {
             ops_bps: 500,
             durability: 10,
             allowance_hint: NearToken::from_millinear(500),
-            tincture_good_pct: 50,
+            tincture_good_pct: 40,
             max_items: 8,
             min_treasury: NearToken::from_millinear(100),
-            r1_loads: vec![(1, 2), (3, 2)],
-            r2_first_load: Some((1, 1)),
+            load_size: 8,
+            min_live: 2,
+            max_live: 6,
         }
     }
 }
@@ -162,15 +165,17 @@ impl Config {
         if self.reveal_ms < self.turn_ms {
             return Err("reveal_ms must be at least turn_ms");
         }
-        for &(live, blank) in &self.r1_loads {
-            if live < 1 || blank < 1 || live.saturating_add(blank) > 8 {
-                return Err("invalid preset load");
-            }
+        if self.load_size < 2 || self.load_size > 8 {
+            return Err("load_size must be between 2 and 8");
         }
-        if let Some((live, blank)) = self.r2_first_load {
-            if live < 1 || blank < 1 || live.saturating_add(blank) > 8 {
-                return Err("invalid preset load");
-            }
+        if self.min_live < 1 {
+            return Err("min_live must be at least 1");
+        }
+        if self.max_live >= self.load_size {
+            return Err("max_live must be below load_size");
+        }
+        if self.min_live > self.max_live {
+            return Err("min_live cannot exceed max_live");
         }
         Ok(())
     }
@@ -188,20 +193,20 @@ mod tests {
     use super::*;
     use near_sdk::borsh;
 
-    /// T-101 bitti kuralı: `Config::default()` DESIGN §3.1/§4.9 tablosuyla birebir.
+    /// T-101 bitti kuralı: `Config::default()` Rolet değerleri + Buckshot round yapısı.
     #[test]
     fn default_matches_design() {
         let c = Config::default();
         assert_eq!(c.rounds.len(), 3);
         assert_eq!(
             c.rounds[0],
-            RoundConfig { start_hp: 2, items_per_load: 0, heal_cut_at: None, item_bag: vec![] }
+            RoundConfig { start_hp: 4, items_per_load: 0, heal_cut_at: None, item_bag: vec![] }
         );
         assert_eq!(
             c.rounds[1],
             RoundConfig {
                 start_hp: 4,
-                items_per_load: 2,
+                items_per_load: 4,
                 heal_cut_at: None,
                 item_bag: vec![
                     Item::Loupe,
@@ -215,7 +220,7 @@ mod tests {
         assert_eq!(
             c.rounds[2],
             RoundConfig {
-                start_hp: 6,
+                start_hp: 4,
                 items_per_load: 4,
                 heal_cut_at: Some(2),
                 item_bag: vec![
@@ -238,11 +243,12 @@ mod tests {
         assert_eq!(c.ops_bps, 500);
         assert_eq!(c.durability, 10);
         assert_eq!(c.allowance_hint, NearToken::from_millinear(500));
-        assert_eq!(c.tincture_good_pct, 50);
+        assert_eq!(c.tincture_good_pct, 40);
         assert_eq!(c.max_items, 8);
         assert_eq!(c.min_treasury, NearToken::from_millinear(100));
-        assert_eq!(c.r1_loads, vec![(1, 2), (3, 2)]);
-        assert_eq!(c.r2_first_load, Some((1, 1)));
+        assert_eq!(c.load_size, 8);
+        assert_eq!(c.min_live, 2);
+        assert_eq!(c.max_live, 6);
     }
 
     #[test]
@@ -314,12 +320,30 @@ mod tests {
         assert_eq!(bad.check(), Err("reveal_ms must be at least turn_ms"));
 
         let mut bad = Config::default();
-        bad.r1_loads.push((0, 2));
-        assert_eq!(bad.check(), Err("invalid preset load"));
+        bad.load_size = 1;
+        assert_eq!(bad.check(), Err("load_size must be between 2 and 8"));
 
         let mut bad = Config::default();
-        bad.r2_first_load = Some((5, 4));
-        assert_eq!(bad.check(), Err("invalid preset load"));
+        bad.load_size = 9;
+        assert_eq!(bad.check(), Err("load_size must be between 2 and 8"));
+
+        let mut bad = Config::default();
+        bad.min_live = 0;
+        assert_eq!(bad.check(), Err("min_live must be at least 1"));
+
+        let mut bad = Config::default();
+        bad.max_live = bad.load_size;
+        assert_eq!(bad.check(), Err("max_live must be below load_size"));
+
+        let mut bad = Config::default();
+        bad.min_live = 5;
+        bad.max_live = 4;
+        assert_eq!(bad.check(), Err("min_live cannot exceed max_live"));
+
+        let mut ok_fixed = Config::default();
+        ok_fixed.min_live = 5;
+        ok_fixed.max_live = 5;
+        assert!(ok_fixed.check().is_ok());
 
         let mut bad = Config::default();
         bad.rounds[1].item_bag.clear();

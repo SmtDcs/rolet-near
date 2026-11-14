@@ -467,8 +467,8 @@ impl Contract {
     /// account ‖ match_id) == commit` doğrulanır. İkinci reveal'da
     /// `match_seed = sha256(secret_A ‖ secret_B ‖ random_seed ‖ match_id)`
     /// sabitlenir; ilk sıra `seed[0] & 1`, R1 yüklemesi `ChainSource` ile
-    /// kurulur (eşyasız, total <= 4), maç `Active` olur, hamle süresi işler
-    /// ve `LoadStarted` aksiyonu loglanır.
+    /// kurulur (`load_size` = 8, `min_live..=max_live` aralığında dolu), maç
+    /// `Active` olur, hamle süresi işler ve `LoadStarted` aksiyonu loglanır.
     pub fn reveal(&mut self, match_id: U64, secret: Base64VecU8) {
         require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         require_direct_call();
@@ -508,13 +508,12 @@ impl Contract {
                 shackled: None,
                 shackle_broke_this_turn: false,
                 saw_active: false,
-                round_load: 1,
             };
-            let load = {
+            let dealt_actions = {
                 let mut src = ChainSource::new(m.seed, &mut m.draw_nonce);
-                new_load(1, 0, &m.config, &mut src)
+                m.game.load = new_load(&m.config, &mut src);
+                crate::game::deal_items(&mut m.game, &m.config, &mut src)
             };
-            m.game.load = load;
             m.status = Status::Active;
             m.deadline_ms = now_ms() + m.config.turn_ms;
             let action = Action::LoadStarted {
@@ -523,6 +522,9 @@ impl Contract {
                 total: m.game.load.remaining,
             };
             push_action(&mut m, action);
+            for dealt in dealt_actions {
+                push_action(&mut m, dealt);
+            }
         }
         self.matches.insert(&key, &m);
         self.settle_storage(storage_before);
@@ -986,15 +988,16 @@ mod tests {
 
         let m = c.match_or_panic(7);
         assert_eq!(m.status, Status::Active);
-        assert_eq!(m.game.hp, [2, 2]);
-        assert_eq!(m.game.max_hp, 2);
+        assert_eq!(m.game.hp, [4, 4]);
+        assert_eq!(m.game.max_hp, 4);
         assert_eq!(m.game.round, 1);
         assert_eq!(m.game.turn, m.seed[0] & 1);
         assert_eq!(m.game.items, [vec![], vec![]]);
         let load = &m.game.load;
-        assert_eq!((load.announced_live, load.announced_blank, load.remaining), (1, 2, 3));
+        assert_eq!(load.remaining, 8);
+        assert!((2..=6).contains(&load.announced_live));
+        assert_eq!(load.announced_blank, 8 - load.announced_live);
         assert!(load.fixed.iter().all(|s| s.is_none()), "hiçbir konum çekilmemiş olmalı");
-        assert_eq!(m.game.round_load, 1);
         assert_ne!(m.seed, [0u8; 32]);
         assert_eq!(m.deadline_ms, now_ms() + 45_000);
         assert_eq!(m.seq, 1);
@@ -1080,27 +1083,28 @@ mod tests {
     fn full_scripted_match_pays_winner_and_unlocks() {
         let mut c = setup_active();
         let treasury_before = c.treasury;
-        // R1 yükünü ve ilk sırayı senaryoya göre sabitle (deterministik).
+        // R1 yükünü, canı ve ilk sırayı senaryoya göre sabitle (deterministik).
         let mut m = c.match_or_panic(7);
+        m.game.hp = [2, 2];
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
         c.save_match(&m);
 
         // Fişek sırası:
         // R1: Live (A->B), Blank (B->B), Blank (B->A), Live (A->B, R1 biter)
-        // R2 yük1 (preset 1+1): Blank (B->A), Live (A Loupe + Hacksaw + A->B 2dmg -> R2 yük2)
-        // R2 yük2 (total=4, live=2): Blank (B Pipe + B->A), Live (A->B), Blank (B->A), Live (A Hacksaw + A->B 2dmg -> R2 biter!)
+        // R2 yük1 (8 gözlü, roll=1 -> 3 live / 5 blank):
+        //   Blank (B->A), Live (A Loupe + Hacksaw + A->B 2dmg), Blank (B Pipe + B->A),
+        //   Live (A->B 1dmg), Blank (B->A), Live (A Hacksaw + A->B 2dmg -> R2 biter!)
         let shells = vec![
             Shell::Live, Shell::Blank, Shell::Blank, Shell::Live,
-            Shell::Blank, Shell::Live,
-            Shell::Blank, Shell::Live, Shell::Blank, Shell::Live,
+            Shell::Blank, Shell::Live, Shell::Blank, Shell::Live, Shell::Blank, Shell::Live,
         ];
         // Rolls:
-        // R2 yük1: preset (1,1) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
-        // R2 yük2: new_load(2 -> total=4, live=2) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
+        // R2 yük1: new_load(roll=1 -> 3 live, 5 blank) + deal_items(
+        //   A: [4:Hacksaw, 0:Loupe, 4:Hacksaw, 1:Pipe],
+        //   B: [1:Pipe, 2:Flask, 0:Loupe, 3:Shackle])
         let rolls = vec![
-            4, 0, 1, 2,
-            2, 4, 0, 1, 2,
+            1, 4, 0, 4, 1, 1, 2, 0, 3,
         ];
         let mut src = ScriptedSource::with_rolls(shells, rolls);
 
@@ -1114,7 +1118,7 @@ mod tests {
         let r1_end = c.fire_with(U64(7), Target::Opponent, &mut src);
         assert!(r1_end.iter().any(|a| matches!(a, Action::RoundEnded { winner: 0, score: [1, 0] })));
 
-        // R2 yük1: kaybeden (Bob) başlar, 4 HP ve eşyalarla.
+        // R2 yük1: kaybeden (Bob) başlar, 4 HP ve 4'er eşyayla.
         switch_at("bob.testnet", NearToken::ZERO, 5_000);
         c.fire_with(U64(7), Target::Opponent, &mut src);
         assert_eq!(c.match_or_panic(7).deadline_ms, 5_000 + 45_000);
@@ -1132,21 +1136,20 @@ mod tests {
         );
         assert_eq!(c.match_or_panic(7).deadline_ms, 6_000 + 45_000);
         c.use_item_with(U64(7), 0, None, &mut src); // Hacksaw
-        c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar -> R2 yük2 başlar
+        c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar (Bob 2 HP)
 
-        // R2 yük2
         switch_at("bob.testnet", NearToken::ZERO, 7_000);
         c.use_item_with(U64(7), 0, None, &mut src); // Pipe (+1 -> 3 HP)
         c.fire_with(U64(7), Target::Opponent, &mut src); // Blank
 
         switch_at("alice.testnet", NearToken::ZERO, 8_000);
-        c.fire_with(U64(7), Target::Opponent, &mut src); // Live -> 2 HP
+        c.fire_with(U64(7), Target::Opponent, &mut src); // Live (Bob 2 HP)
 
         switch_at("bob.testnet", NearToken::ZERO, 9_000);
         c.fire_with(U64(7), Target::Opponent, &mut src); // Blank
 
         switch_at("alice.testnet", NearToken::ZERO, 10_000);
-        c.use_item_with(U64(7), 0, None, &mut src); // Hacksaw (R2 yük2'den)
+        c.use_item_with(U64(7), 0, None, &mut src); // Hacksaw
         let end_actions = c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar -> 0 HP!
         assert!(end_actions.iter().any(|a| matches!(a, Action::MatchEnded { winner: 0, .. })));
 
@@ -1742,6 +1745,7 @@ mod tests {
 
         // Mevcut maç R1'den R2'ye geçerken ve biterken kendi snapshot'ını kullanır.
         let mut m = c.match_or_panic(7);
+        m.game.hp = [2, 2];
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
         c.save_match(&m);

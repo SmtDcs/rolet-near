@@ -133,8 +133,6 @@ pub struct GameState {
     pub shackle_broke_this_turn: bool,
     /// Testere aktif: bir sonraki atış 2 hasar verir.
     pub saw_active: bool,
-    /// Bu round'da dağıtılan yükleme sayısı (preset R1/R2 yükleri için).
-    pub round_load: u8,
 }
 
 /// Maçın `Revealing` aşamasındaki (oyunun kurulmadan önceki) yer tutucusu.
@@ -153,7 +151,6 @@ impl Default for GameState {
             shackled: None,
             shackle_broke_this_turn: false,
             saw_active: false,
-            round_load: 0,
         }
     }
 }
@@ -356,26 +353,18 @@ impl Load {
     }
 }
 
-/// Yeni yükleme üretir (FIX-09 / G-03):
-/// - R1 `load_index < cfg.r1_loads.len()`: preset çift `(dolu, boş)` (vars. `(1, 2)`, `(3, 2)`).
-/// - R2 `load_index == 0` ve `cfg.r2_first_load = Some((dolu, boş))`: preset `(1, 1)`.
-/// - Diğer tüm yüklemelerde DoN formülü: `total = 2 + roll(7) % 7` (2–8, R1'de `<= 4`),
-///   `live = (total / 2).max(1)` (her zaman `1 <= live <= blank`).
-pub fn new_load(round: u8, load_index: u8, cfg: &Config, src: &mut dyn ShellSource) -> Load {
-    if round == 1 {
-        if let Some(&(live, blank)) = cfg.r1_loads.get(load_index as usize) {
-            return Load::new(live, blank);
-        }
-    }
-    if round == 2 && load_index == 0 {
-        if let Some((live, blank)) = cfg.r2_first_load {
-            return Load::new(live, blank);
-        }
-    }
-    let raw = 2 + (src.roll(7) % 7) as u8;
-    let total = if round == 1 { raw.min(4) } else { raw };
-    let live = (total / 2).max(1);
-    Load::new(live, total - live)
+/// Yeni yükleme üretir (Rolet 8 gözlü tabanca + rastgele dolu sayısı):
+/// Toplam fişek `cfg.load_size` (vars. 8), dolu sayısı `src.roll` ile
+/// `cfg.min_live..=cfg.max_live` (vars. 2..=6) aralığından seçilir, kalanlar
+/// kuru sıkıdır. Yalnızca duyurulan sayılar yazılır; sıra gizli kalır ve atış
+/// anında lazy draw ile çekilir.
+pub fn new_load(cfg: &Config, src: &mut dyn ShellSource) -> Load {
+    let min = cfg.min_live.min(cfg.max_live);
+    let max = cfg.max_live.max(min).min(cfg.load_size.saturating_sub(1));
+    let span = (max - min) as u32 + 1;
+    let live = min + src.roll(span) as u8;
+    let blank = cfg.load_size.saturating_sub(live);
+    Load::new(live, blank)
 }
 
 /// `Config::rounds` içinden ilgili round'un eşya torbasını döner (FIX-12).
@@ -422,8 +411,7 @@ fn reload(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource, action
     // Yeni yükte kelepçe ve zincir kilidi temizlenir (FIX-11 / G-05).
     state.shackled = None;
     state.shackle_broke_this_turn = false;
-    state.load = new_load(state.round, state.round_load, cfg, src);
-    state.round_load = state.round_load.saturating_add(1);
+    state.load = new_load(cfg, src);
     actions.push(Action::LoadStarted {
         live: state.load.announced_live,
         blank: state.load.announced_blank,
@@ -479,7 +467,6 @@ fn apply_damage(
     state.shackled = None;
     state.shackle_broke_this_turn = false;
     state.saw_active = false;
-    state.round_load = 0;
     state.turn = victim as u8;
     reload(state, cfg, src, actions);
     Some(winner)
@@ -779,7 +766,7 @@ mod tests {
             round: 3,
             score: [1, 0],
             hp: [4, 2],
-            max_hp: 6,
+            max_hp: 4,
             heal_cut: [false, true],
             items: [vec![Item::Pipe, Item::Magnet], vec![]],
             load: sample_load(),
@@ -787,7 +774,6 @@ mod tests {
             shackled: Some(0),
             shackle_broke_this_turn: false,
             saw_active: true,
-            round_load: 1,
         }
     }
 
@@ -842,74 +828,69 @@ mod tests {
             shackled: None,
             shackle_broke_this_turn: false,
             saw_active: false,
-            round_load: 1,
         }
     }
 
-    /// T-103 + FIX-09: preset R1/R2 yükleri ve DoN `live = max(1, total/2)` formülü.
+    /// T-103: 8 gözlü tabancada `min_live..=max_live` aralığından rastgele dolu/boş seçimi.
     #[test]
     fn new_load_follows_design_formula() {
         let cfg = Config::default();
-        // R1 preset sırası: (1, 2), (3, 2); sonrası DoN (<= 4).
-        let mut src = ScriptedSource::with_rolls(vec![], vec![6]);
-        assert_eq!(
-            (
-                new_load(1, 0, &cfg, &mut src).announced_live,
-                new_load(1, 0, &cfg, &mut src).announced_blank,
-            ),
-            (1, 2)
-        );
-        assert_eq!(
-            (
-                new_load(1, 1, &cfg, &mut src).announced_live,
-                new_load(1, 1, &cfg, &mut src).announced_blank,
-            ),
-            (3, 2)
-        );
-        let r1_extra = new_load(1, 2, &cfg, &mut src); // raw=8 -> clamped 4 -> (2, 2)
-        assert_eq!((r1_extra.announced_live, r1_extra.announced_blank), (2, 2));
+        let mut src = ScriptedSource::with_rolls(vec![], vec![0, 3, 4]);
+        let l0 = new_load(&cfg, &mut src);
+        assert_eq!((l0.announced_live, l0.announced_blank, l0.remaining), (2, 6, 8));
+        let l1 = new_load(&cfg, &mut src);
+        assert_eq!((l1.announced_live, l1.announced_blank, l1.remaining), (5, 3, 8));
+        let l2 = new_load(&cfg, &mut src);
+        assert_eq!((l2.announced_live, l2.announced_blank, l2.remaining), (6, 2, 8));
 
-        // R2 ilk yükü preset (1, 1); sonraki yük DoN.
-        let mut src = ScriptedSource::with_rolls(vec![], vec![5]);
-        let r2_first = new_load(2, 0, &cfg, &mut src);
-        assert_eq!((r2_first.announced_live, r2_first.announced_blank), (1, 1));
-        let r2_next = new_load(2, 1, &cfg, &mut src); // total=7 -> live=3, blank=4
-        assert_eq!((r2_next.announced_live, r2_next.announced_blank), (3, 4));
-
-        // R3 DoN: total = 2 + roll(7) = 7 -> live = 3, blank = 4.
-        let mut src = ScriptedSource::with_rolls(vec![], vec![5]);
-        let r3 = new_load(3, 0, &cfg, &mut src);
-        assert_eq!((r3.announced_live, r3.announced_blank), (3, 4));
+        // Sabit dolu sayısı Config üzerinden ayarlanabilir (min_live == max_live).
+        let mut fixed_cfg = Config::default();
+        fixed_cfg.min_live = 5;
+        fixed_cfg.max_live = 5;
+        let lf = new_load(&fixed_cfg, &mut src);
+        assert_eq!((lf.announced_live, lf.announced_blank, lf.remaining), (5, 3, 8));
     }
 
-    /// T-103 + FIX-09: 10 000 tohumda DoN formülü `1 <= live <= blank`, R1 yükleri (1,2),(3,2).
+    /// T-103: 10 000 tohumda 8 gözlü yükleme sınırları (`2..=6` dolu, `2..=6` boş),
+    /// duyurulan sayıların çekilen fişeklerle eşleşmesi ve R1/R2/R3 eşya dağıtımı.
     #[test]
     fn new_load_and_deal_bounds_hold_for_10000_seeds() {
         let cfg = Config::default();
+        let mut seen_live = [false; 9];
         for seed in 1..=10_000u64 {
             let mut src = XorshiftRng::new(seed);
-            // R1 ilk iki yük sırayla (1,2) ve (3,2).
-            let l0 = new_load(1, 0, &cfg, &mut src);
-            let l1 = new_load(1, 1, &cfg, &mut src);
-            assert_eq!((l0.live_left, l0.blank_left), (1, 2));
-            assert_eq!((l1.live_left, l1.blank_left), (3, 2));
-
-            for (round, load_idx) in [(1u8, 2u8), (2u8, 1u8), (3u8, 0u8)] {
-                let load = new_load(round, load_idx, &cfg, &mut src);
+            for round in [1u8, 2u8, 3u8] {
+                let mut load = new_load(&cfg, &mut src);
                 let total = load.remaining;
-                assert!(total >= 2 && total <= 8, "total {total} (seed {seed}, round {round})");
-                if round == 1 {
-                    assert!(total <= 4, "R1 total {total} (seed {seed})");
-                }
-                assert!(load.live_left >= 1, "live {} (seed {seed}, round {round})", load.live_left);
-                assert!(load.live_left <= load.blank_left, "live {} > blank {} (seed {seed}, round {round})", load.live_left, load.blank_left);
-                assert_eq!(load.live_left + load.blank_left, total);
-                assert_eq!(load.announced_live, load.live_left);
-                assert_eq!(load.announced_blank, load.blank_left);
+                assert_eq!(total, cfg.load_size, "total {total} (seed {seed}, round {round})");
+                assert!(
+                    load.announced_live >= cfg.min_live && load.announced_live <= cfg.max_live,
+                    "live {} aralık dışı (seed {seed}, round {round})",
+                    load.announced_live
+                );
+                assert_eq!(load.announced_blank, cfg.load_size - load.announced_live);
+                assert_eq!(load.live_left, load.announced_live);
+                assert_eq!(load.blank_left, load.announced_blank);
                 assert_eq!(load.fixed.len(), total as usize);
                 assert!(load.fixed.iter().all(|s| s.is_none()));
+                seen_live[load.announced_live as usize] = true;
 
-                let mut state = state_for_round(round, load, &cfg);
+                let expected_live = load.announced_live;
+                let expected_blank = load.announced_blank;
+                let mut drawn_live = 0u8;
+                let mut drawn_blank = 0u8;
+                while !load.is_empty() {
+                    let shell = load.current(&mut src).unwrap();
+                    load.advance(shell);
+                    match shell {
+                        Shell::Live => drawn_live += 1,
+                        Shell::Blank => drawn_blank += 1,
+                    }
+                }
+                assert_eq!(drawn_live, expected_live, "seed {seed}, round {round}");
+                assert_eq!(drawn_blank, expected_blank, "seed {seed}, round {round}");
+
+                let mut state = state_for_round(round, new_load(&cfg, &mut src), &cfg);
                 let actions = deal_items(&mut state, &cfg, &mut src);
                 let expected = cfg.rounds[(round - 1) as usize].items_per_load as usize;
                 let bag = item_bag(&cfg, round);
@@ -924,6 +905,9 @@ mod tests {
                     assert_eq!(actions.len(), 2);
                 }
             }
+        }
+        for live in cfg.min_live..=cfg.max_live {
+            assert!(seen_live[live as usize], "live={live} 10000 tohumda hiç görülmedi");
         }
     }
 
@@ -1053,7 +1037,7 @@ mod tests {
             ]
         );
         assert_eq!(st.turn, 0);
-        assert_eq!(st.hp, [2, 2]);
+        assert_eq!(st.hp, [4, 4]);
         assert_eq!(st.load.remaining, 1);
         assert_eq!((st.load.live_left, st.load.blank_left), (1, 0));
     }
@@ -1064,7 +1048,7 @@ mod tests {
         let mut src = ScriptedSource::new(vec![Shell::Live]);
         let mut st = fire_state(1, Load::new(1, 1));
         fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
-        assert_eq!(st.hp, [1, 2]);
+        assert_eq!(st.hp, [3, 4]);
         assert_eq!(st.turn, 1);
     }
 
@@ -1074,7 +1058,7 @@ mod tests {
         let mut src = ScriptedSource::new(vec![Shell::Blank]);
         let mut st = fire_state(1, Load::new(1, 1));
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
-        assert_eq!(st.hp, [2, 2]);
+        assert_eq!(st.hp, [4, 4]);
         assert_eq!(st.turn, 1);
         assert_eq!(
             actions[0],
@@ -1088,7 +1072,7 @@ mod tests {
         let mut src = ScriptedSource::new(vec![Shell::Live]);
         let mut st = fire_state(1, Load::new(1, 1));
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
-        assert_eq!(st.hp, [2, 1]);
+        assert_eq!(st.hp, [4, 3]);
         assert_eq!(st.turn, 1);
         assert_eq!(
             actions[0],
@@ -1155,7 +1139,7 @@ mod tests {
     /// FIX-11 (G-05): Son fişekte boşla kendine ateşten sonra yeni yükte kelepçe kalkar.
     #[test]
     fn reload_clears_shackles_after_blank_self_shot_on_last_shell() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 12]);
         let mut st = fire_state(2, Load::new(0, 1));
         st.shackled = Some(1);
         st.shackle_broke_this_turn = true;
@@ -1174,7 +1158,7 @@ mod tests {
     #[test]
     fn last_shell_triggers_reload_with_items() {
         let mut src =
-            ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0; 8]);
+            ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0; 12]);
         let mut st = fire_state(2, Load::new(1, 1));
         let mut actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
         actions.extend(fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap());
@@ -1185,25 +1169,25 @@ mod tests {
                 Action::Ejected { shell: Shell::Blank },
                 Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Live, damage: 1 },
                 Action::Ejected { shell: Shell::Live },
-                Action::LoadStarted { live: 1, blank: 1, total: 2 },
-                Action::ItemsDealt { player: 0, items: vec![Item::Loupe, Item::Loupe] },
-                Action::ItemsDealt { player: 1, items: vec![Item::Loupe, Item::Loupe] },
+                Action::LoadStarted { live: 2, blank: 6, total: 8 },
+                Action::ItemsDealt { player: 0, items: vec![Item::Loupe; 4] },
+                Action::ItemsDealt { player: 1, items: vec![Item::Loupe; 4] },
             ]
         );
-        assert_eq!(st.load.remaining, 2);
+        assert_eq!(st.load.remaining, 8);
         assert_eq!(st.turn, 1); // ikinci atış dolu → sıra geçti
         assert_eq!(st.hp, [3, 4]);
     }
 
-    /// T-104: son fişek R1'de → ikinci R1 preset yükü (3, 2), eşya yok.
+    /// T-104: son fişek R1'de → 8 gözlü yeni yük (roll 3 -> 5/3), eşya yok.
     #[test]
     fn r1_reload_deals_no_items() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0]);
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![3]);
         let mut st = fire_state(1, Load::new(1, 1));
         let mut actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
         actions.extend(fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap());
         assert_eq!(actions.len(), 5);
-        assert_eq!(actions[4], Action::LoadStarted { live: 3, blank: 2, total: 5 });
+        assert_eq!(actions[4], Action::LoadStarted { live: 5, blank: 3, total: 8 });
         assert!(st.items[0].is_empty() && st.items[1].is_empty());
     }
 
@@ -1211,17 +1195,17 @@ mod tests {
     /// round durumu sıfırlanır ve yeni yükleme + dağıtım gelir (kural 6).
     #[test]
     fn death_ends_round_and_loser_starts_next() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Live], vec![0; 8]);
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Live], vec![0; 12]);
         let mut st = fire_state(1, Load::new(1, 1));
-        st.hp = [2, 1];
+        st.hp = [4, 1];
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
         assert_eq!(actions[2], Action::RoundEnded { winner: 0, score: [1, 0] });
-        assert_eq!(actions[3], Action::LoadStarted { live: 1, blank: 1, total: 2 });
+        assert_eq!(actions[3], Action::LoadStarted { live: 2, blank: 6, total: 8 });
         assert_eq!(st.round, 2);
         assert_eq!(st.hp, [4, 4]);
         assert_eq!(st.max_hp, 4);
         assert_eq!(st.turn, 1); // kaybeden başlar
-        assert_eq!(st.items[0].len(), 2);
+        assert_eq!(st.items[0].len(), 4);
         assert_eq!(st.heal_cut, [false, false]);
     }
 
@@ -1253,11 +1237,11 @@ mod tests {
     fn heal_cut_triggers_at_threshold() {
         let mut src = ScriptedSource::new(vec![Shell::Live]);
         let mut st = fire_state(3, Load::new(2, 2));
-        st.hp = [5, 3];
+        st.hp = [4, 3];
         st.saw_active = true;
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
         assert_eq!(st.heal_cut, [false, true]);
-        assert_eq!(st.hp, [5, 1]);
+        assert_eq!(st.hp, [4, 1]);
         assert_eq!(actions[2], Action::HealCut { player: 1 });
     }
 
@@ -1268,7 +1252,7 @@ mod tests {
         let mut src = ScriptedSource::new(vec![Shell::Live]);
         let mut st = fire_state(3, Load::new(2, 2));
         st.score = [1, 1];
-        st.hp = [5, 2];
+        st.hp = [4, 2];
         st.saw_active = true;
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
         assert_eq!(st.heal_cut, [false, false]);
@@ -1397,20 +1381,20 @@ mod tests {
         assert_eq!(st.load.blank_left, 0);
         assert!(st.saw_active); // bira testereyi düşürmez (kural 3)
         // Son fişek: tur biter, testere sıfırlanır, yeni yükleme + R2 dağıtımı (G-04).
-        let mut src2 = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut src2 = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 12]);
         let mut st2 = item_state(2, Load::new(1, 1), vec![Item::Flask]);
         st2.load = Load::new(0, 1);
         st2.saw_active = true;
         let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
         assert_eq!(actions2.len(), 5);
-        assert_eq!(actions2[2], Action::LoadStarted { live: 1, blank: 1, total: 2 });
-        assert_eq!(st2.load.remaining, 2);
-        assert_eq!(st2.items[0], vec![Item::Loupe, Item::Loupe]);
+        assert_eq!(actions2[2], Action::LoadStarted { live: 2, blank: 6, total: 8 });
+        assert_eq!(st2.load.remaining, 8);
+        assert_eq!(st2.items[0], vec![Item::Loupe; 4]);
         assert_eq!(st2.turn, 1);
         assert!(!st2.saw_active);
 
         // Son fişekte rakip kelepçeliyse atlanıp kullanana döner.
-        let mut src_shackle = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut src_shackle = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 12]);
         let mut st_sh = item_state(2, Load::new(0, 1), vec![Item::Flask]);
         st_sh.shackled = Some(1);
         let actions_sh = use_at(&mut st_sh, 0, &mut src_shackle).unwrap();
@@ -1576,7 +1560,7 @@ mod tests {
             actions[0],
             Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Blank, damage: 0 }
         );
-        assert_eq!(st.hp, [6, 6]);
+        assert_eq!(st.hp, [4, 4]);
         assert_eq!(st.turn, 0);
     }
 
@@ -1669,7 +1653,7 @@ mod tests {
     /// dağıtım da işler; Lockpick yine de tüketilir.
     #[test]
     fn lockpick_stolen_flask_can_trigger_reload() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 12]);
         let mut st = item_state(2, Load::new(1, 1), vec![Item::Lockpick]);
         st.load = Load::new(0, 1);
         st.items[1] = vec![Item::Flask];
@@ -1686,10 +1670,10 @@ mod tests {
             }
         );
         assert_eq!(actions[2], Action::Ejected { shell: Shell::Blank });
-        assert_eq!(actions[3], Action::LoadStarted { live: 1, blank: 1, total: 2 });
-        assert_eq!(st.load.remaining, 2);
-        assert_eq!(st.items[0], vec![Item::Loupe, Item::Loupe]);
-        assert_eq!(st.items[1], vec![Item::Loupe, Item::Loupe]);
+        assert_eq!(actions[3], Action::LoadStarted { live: 2, blank: 6, total: 8 });
+        assert_eq!(st.load.remaining, 8);
+        assert_eq!(st.items[0], vec![Item::Loupe; 4]);
+        assert_eq!(st.items[1], vec![Item::Loupe; 4]);
     }
 
     /// T-106: Tincture — `tincture_good_pct` altında +2 can (max'a kelepçeli),
@@ -1698,7 +1682,7 @@ mod tests {
     fn tincture_gamble_heals_damages_or_ends_round() {
         let mut src = ScriptedSource::with_rolls(vec![], vec![30]);
         let mut st = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
-        st.hp = [3, 3];
+        st.hp = [2, 2];
         let actions = use_at(&mut st, 0, &mut src).unwrap();
         assert_eq!(
             actions,
@@ -1709,11 +1693,11 @@ mod tests {
                 result: ItemResult::Healed { amount: 2 },
             }]
         );
-        assert_eq!(st.hp, [5, 3]);
+        assert_eq!(st.hp, [4, 2]);
         // İyi yol maksimumu aşamaz.
         let mut src2 = ScriptedSource::with_rolls(vec![], vec![10]);
         let mut st2 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
-        st2.hp = [5, 5];
+        st2.hp = [3, 3];
         let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
         assert_eq!(
             actions2[0],
@@ -1724,9 +1708,9 @@ mod tests {
                 result: ItemResult::Healed { amount: 1 },
             }
         );
-        assert_eq!(st2.hp, [6, 5]);
+        assert_eq!(st2.hp, [4, 3]);
         // Kötü yol: -1 can, R3 eşiğine (2) düşünce HealCut.
-        let mut src3 = ScriptedSource::with_rolls(vec![], vec![50]);
+        let mut src3 = ScriptedSource::with_rolls(vec![], vec![40]);
         let mut st3 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
         st3.hp = [3, 3];
         let actions3 = use_at(&mut st3, 0, &mut src3).unwrap();
@@ -1756,9 +1740,9 @@ mod tests {
     /// kaybeden yeni round'u başlatır.
     #[test]
     fn tincture_bad_roll_can_kill() {
-        let mut src = ScriptedSource::with_rolls(vec![], vec![99, 0, 0, 0, 0, 0, 0]);
+        let mut src = ScriptedSource::with_rolls(vec![], vec![99, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let mut st = item_state(1, Load::new(1, 1), vec![Item::Tincture]);
-        st.hp = [1, 2];
+        st.hp = [1, 4];
         let actions = use_at(&mut st, 0, &mut src).unwrap();
         assert_eq!(
             actions[0],
@@ -1780,8 +1764,9 @@ mod tests {
     /// R2'de yeni dağıtılan eşyalar bozulmaz.
     #[test]
     fn tincture_bad_roll_high_slot_does_not_panic_or_corrupt_new_items() {
-        // roll 0 = 99 (Tincture kötü yol), sonraki rollar new_load + deal_items (4 item)
-        let mut src = ScriptedSource::with_rolls(vec![], vec![99, 0, 0, 0, 1, 2, 3]);
+        // roll 0 = 99 (Tincture kötü yol), sonraki rollar new_load + deal_items (8 item)
+        let mut src =
+            ScriptedSource::with_rolls(vec![], vec![99, 0, 0, 1, 2, 3, 4, 0, 1, 2]);
         let items = vec![
             Item::Loupe,
             Item::Pipe,
@@ -1791,20 +1776,20 @@ mod tests {
             Item::Tincture,
         ];
         let mut st = item_state(1, Load::new(1, 1), items);
-        st.hp = [1, 2];
+        st.hp = [1, 4];
         let actions = use_at(&mut st, 5, &mut src).unwrap();
         assert_eq!(actions[1], Action::RoundEnded { winner: 1, score: [0, 1] });
         assert_eq!(st.round, 2);
-        // R2 dağıtımı her iki oyuncuya tam 2 eşya vermiş ve silinmemiş olmalı.
-        assert_eq!(st.items[0].len(), 2);
-        assert_eq!(st.items[1].len(), 2);
+        // R2 dağıtımı her iki oyuncuya tam 4 eşya vermiş ve silinmemiş olmalı.
+        assert_eq!(st.items[0].len(), 4);
+        assert_eq!(st.items[1].len(), 4);
     }
 
     /// FIX-02 (S-07): Tam dolu 8 slotta Flask son fişeği atarsa boşalan 8. slota
     /// yeni eşya dağıtılır; hata durumunda ise eşya eski slotuna geri konur.
     #[test]
     fn flask_at_full_slots_frees_slot_before_reload_and_errors_restore_slot() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 12]);
         let mut items = vec![Item::Pipe; 7];
         items.push(Item::Flask);
         let mut st = item_state(2, Load::new(0, 1), items);
