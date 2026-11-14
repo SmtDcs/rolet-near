@@ -16,10 +16,15 @@ use near_contract_standards::non_fungible_token::TokenId;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::{Base64VecU8, U64};
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{env, near, require, AccountId, NearToken, Promise};
+use near_sdk::{env, near, require, AccountId, Gas, NearToken, Promise};
 
 /// `Match.log` kapasitesi (DESIGN §4.5: son 32 aksiyon).
 pub const LOG_CAP: usize = 32;
+
+/// S-01: rastgele çekiliş içeren metodlar (`reveal`, `fire`, `use_item`) için
+/// minimum ön ödemeli gaz eşiği. Sandbox'ta ölçülen en pahalı dal (~4.1 Tgas)
+/// için >2× güvenlik payı olarak 10 Tgas seçilmiştir.
+pub const MIN_ACTION_GAS: Gas = Gas::from_tgas(10);
 
 /// Maç durumu (DESIGN §4.5). `Pending → Revealing → Active → Finished`, hatalı
 /// veya terk edilenler `Cancelled`.
@@ -248,6 +253,7 @@ impl Contract {
         src_override: Option<&mut dyn ShellSource>,
         step: impl FnOnce(&mut GameState, &Config, u8, &mut dyn ShellSource) -> Result<Vec<Action>, GameError>,
     ) -> Vec<Action> {
+        require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         require_direct_call();
         let player = env::predecessor_account_id();
         let mut m = self.match_or_panic(match_id);
@@ -389,6 +395,7 @@ impl Contract {
     /// kurulur (eşyasız, total <= 4), maç `Active` olur, hamle süresi işler
     /// ve `LoadStarted` aksiyonu loglanır.
     pub fn reveal(&mut self, match_id: U64, secret: Base64VecU8) {
+        require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         require_direct_call();
         require!(secret.0.len() == 32, "secret must be 32 bytes");
         let player = env::predecessor_account_id();
@@ -448,6 +455,7 @@ impl Contract {
     /// NEP-297 olaylarına yazılır, `deadline_ms` yenilenir; maç biterse ödül
     /// transfer edilir (treasury yetersizse `owed`), kilitler açılır.
     pub fn fire(&mut self, match_id: U64, target: Target) -> Vec<Action> {
+        require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         self.apply_game_action(match_id.0, None, |game, cfg, actor, src| {
             game_fire(game, cfg, actor, target, src)
         })
@@ -456,6 +464,7 @@ impl Contract {
     /// Sırası gelen oyuncunun eşya kullanımı (T-112, DESIGN §4.7).
     /// `steal_slot` yalnızca `Lockpick` için gereklidir.
     pub fn use_item(&mut self, match_id: U64, slot: u8, steal_slot: Option<u8>) -> Vec<Action> {
+        require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         self.apply_game_action(match_id.0, None, |game, cfg, actor, src| {
             game_use_item(game, cfg, actor, slot, steal_slot, src)
         })
@@ -1419,5 +1428,50 @@ mod tests {
             end_storage < mid_storage,
             "end_storage ({end_storage}) < mid_storage ({mid_storage}) olmalı (before_mid={before_mid})"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // FIX-01: Minimum prepaid gas
+    // ------------------------------------------------------------------
+
+    #[test]
+    #[should_panic(expected = "insufficient gas")]
+    fn reveal_rejects_low_prepaid_gas() {
+        let mut c = setup_revealing();
+        let ctx = VMContextBuilder::new()
+            .signer_account_id("alice.testnet".parse().unwrap())
+            .predecessor_account_id("alice.testnet".parse().unwrap())
+            .prepaid_gas(Gas::from_tgas(5))
+            .build();
+        near_sdk::testing_env!(ctx);
+        c.reveal(U64(7), secret_of(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient gas")]
+    fn fire_rejects_low_prepaid_gas() {
+        let mut c = setup_active();
+        let turn_acc = c.match_or_panic(7).players[c.match_or_panic(7).game.turn as usize].clone();
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(turn_acc.clone())
+            .predecessor_account_id(turn_acc)
+            .prepaid_gas(Gas::from_tgas(5))
+            .build();
+        near_sdk::testing_env!(ctx);
+        c.fire(U64(7), Target::Opponent);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient gas")]
+    fn use_item_rejects_low_prepaid_gas() {
+        let mut c = setup_active();
+        let turn_acc = c.match_or_panic(7).players[c.match_or_panic(7).game.turn as usize].clone();
+        let ctx = VMContextBuilder::new()
+            .signer_account_id(turn_acc.clone())
+            .predecessor_account_id(turn_acc)
+            .prepaid_gas(Gas::from_tgas(5))
+            .build();
+        near_sdk::testing_env!(ctx);
+        c.use_item(U64(7), 0, None);
     }
 }

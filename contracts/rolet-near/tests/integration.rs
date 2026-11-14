@@ -6,10 +6,10 @@
 
 use near_sdk::json_types::{Base64VecU8, U64};
 use near_sdk::serde_json::json;
-use near_workspaces::types::NearToken as WsNearToken;
+use near_workspaces::types::{Gas as WsGas, NearToken as WsNearToken};
 use rolet_near::config::Config;
 use rolet_near::game::{Action, Target};
-use rolet_near::matches::{PlayerState, Status};
+use rolet_near::matches::{PlayerState, Status, MIN_ACTION_GAS};
 use rolet_near::nft::{CharacterState, Kind};
 use rolet_near::views::{LeaderboardEntry, MatchView};
 use sha2::{Digest, Sha256};
@@ -224,5 +224,197 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
     assert_eq!(&lb[0].account_id, winner_account);
     assert_eq!(lb[0].wins, 1);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn fix01_gas_floor_rejects_low_gas_and_passes_min_action_gas() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+
+    let owner = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let contract = worker.dev_deploy(&wasm).await?;
+
+    contract
+        .call("new")
+        .args_json(json!({
+            "owner": owner.id(),
+            "config": Config::default(),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    owner
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(2))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let alice_token: String = alice
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+
+    let bob_token: String = bob
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Ayarci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+
+    let match_id = 17u64;
+    let secret_a = [0x31u8; 32];
+    let secret_b = [0x42u8; 32];
+    let commit_a = compute_commitment(secret_a, alice.id().as_str(), match_id);
+    let commit_b = compute_commitment(secret_b, bob.id().as_str(), match_id);
+
+    alice
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "opponent": bob.id(),
+            "commit": commit_a,
+            "token_id": alice_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    bob.call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "opponent": alice.id(),
+            "commit": commit_b,
+            "token_id": bob_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let low_gas = WsGas::from_tgas(MIN_ACTION_GAS.as_tgas() - 1);
+    let min_gas = WsGas::from_tgas(MIN_ACTION_GAS.as_tgas());
+
+    // Düşük gazla reveal çekilişten/durum değişiminden önce reddedilir.
+    let low_reveal = alice
+        .call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "secret": Base64VecU8(secret_a.to_vec()),
+        }))
+        .gas(low_gas)
+        .transact()
+        .await?;
+    assert!(low_reveal.is_failure(), "low-gas reveal must fail");
+    let err_str = format!("{:?}", low_reveal.failures());
+    assert!(err_str.contains("insufficient gas"), "unexpected failure: {err_str}");
+
+    let mv_before: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(match_id) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    assert_eq!(mv_before.revealed, [false, false]);
+
+    // MIN_ACTION_GAS ile iki reveal geçer.
+    alice
+        .call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "secret": Base64VecU8(secret_a.to_vec()),
+        }))
+        .gas(min_gas)
+        .transact()
+        .await?
+        .into_result()?;
+    bob.call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "secret": Base64VecU8(secret_b.to_vec()),
+        }))
+        .gas(min_gas)
+        .transact()
+        .await?
+        .into_result()?;
+
+    // Düşük gazla use_item ve fire çekilişten önce reddedilir.
+    let mut mv: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(match_id) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    let first_actor = if mv.game.turn == 0 { &alice } else { &bob };
+
+    let low_item = first_actor
+        .call(contract.id(), "use_item")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "slot": 0,
+            "steal_slot": null,
+        }))
+        .gas(low_gas)
+        .transact()
+        .await?;
+    assert!(low_item.is_failure());
+    assert!(format!("{:?}", low_item.failures()).contains("insufficient gas"));
+
+    let low_fire = first_actor
+        .call(contract.id(), "fire")
+        .args_json(json!({
+            "match_id": U64(match_id),
+            "target": Target::Opponent,
+        }))
+        .gas(low_gas)
+        .transact()
+        .await?;
+    assert!(low_fire.is_failure());
+    assert!(format!("{:?}", low_fire.failures()).contains("insufficient gas"));
+
+    let mv_after_low: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(match_id) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    assert_eq!(mv_after_low.seq, mv.seq);
+    assert_eq!(mv_after_low.game.load.remaining, mv.game.load.remaining);
+
+    // Tüm maç (en pahalı maç sonu + transfer dalı dahil) tam MIN_ACTION_GAS ile geçer.
+    let mut turns = 0u32;
+    while mv.status == Status::Active {
+        turns += 1;
+        assert!(turns <= 120);
+        let actor = if mv.game.turn == 0 { &alice } else { &bob };
+        let res = actor
+            .call(contract.id(), "fire")
+            .args_json(json!({
+                "match_id": U64(match_id),
+                "target": Target::Opponent,
+            }))
+            .gas(min_gas)
+            .transact()
+            .await?
+            .into_result()?;
+        let actions: Vec<Action> = res.json()?;
+        assert!(!actions.is_empty());
+        mv = contract
+            .view("get_match")
+            .args_json(json!({ "match_id": U64(match_id) }))
+            .await?
+            .json::<Option<MatchView>>()?
+            .unwrap();
+    }
+    assert_eq!(mv.status, Status::Finished);
     Ok(())
 }
