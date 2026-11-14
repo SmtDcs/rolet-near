@@ -1,0 +1,7 @@
+{
+  "type": "NotEnoughAllowance",
+  "message": "Access Key {account_id}:{public_key} does not have enough balance 0.000001 for transaction costing 0.006",
+  "context": {
+    "transactionHash": "8abc"
+  }
+}

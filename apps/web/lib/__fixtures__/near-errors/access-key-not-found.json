@@ -1,0 +1,12 @@
+{
+  "name": "HANDLER_ERROR",
+  "cause": {
+    "name": "UNKNOWN_ACCESS_KEY",
+    "info": {
+      "public_key": "ed25519:5z3F8tV6k...",
+      "block_height": 42,
+      "block_hash": "11111111111111111111111111111111"
+    }
+  },
+  "data": "access key ed25519:5z3F8tV6k... does not exist while viewing"
+}

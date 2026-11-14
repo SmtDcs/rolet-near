@@ -1,0 +1,11 @@
+{
+  "name": "HANDLER_ERROR",
+  "cause": {
+    "name": "INVALID_TRANSACTION",
+    "info": {
+      "InvalidTxError": {
+        "InvalidAccessKeyError": "DepositWithFunctionCall"
+      }
+    }
+  }
+}
