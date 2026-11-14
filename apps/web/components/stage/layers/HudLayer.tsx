@@ -31,22 +31,22 @@ export function HudLayer({
           <span className={isYourTurn ? "font-bold text-[#52c41a]" : "text-[#e5c378]"}>
             {visual.phase === "finished"
               ? visual.winner === visual.you
-                ? "KAZANDIN"
-                : "KAYBETTİN"
+                ? "YOU WIN"
+                : "YOU LOSE"
               : isYourTurn
-                ? "SIRA SENDE"
-                : "RAKİP SIRASI"}
+                ? "YOUR TURN"
+                : "RIVAL'S TURN"}
           </span>
           <span className="text-[#5c5c5c]">|</span>
           <span className="text-[#eaeaea]">ROUND {visual.round}</span>
           <span className="text-[#5c5c5c]">|</span>
           <span className="text-[#c6a15b]">
-            {visual.remaining}/8 HAZNE
+            {visual.remaining}/8 CHAMBERS
           </span>
           {visual.sawActive && (
             <>
               <span className="text-[#5c5c5c]">|</span>
-              <span className="font-bold text-[#e61919]">TESTERE AKTİF (2x)</span>
+              <span className="font-bold text-[#e61919]">HACKSAW ACTIVE (2x)</span>
             </>
           )}
         </div>
@@ -75,7 +75,7 @@ export function HudLayer({
             onClick={hud.onToggleMute}
             className="cursor-pointer border border-[#c6a15b]/40 bg-[#0a0a0a]/85 px-2.5 py-1 font-mono text-[10px] tracking-[0.14em] text-[#c6a15b] uppercase hover:border-[#e5c378]"
           >
-            {hud.muted ? "SES: KAPALI" : "SES: AÇIK"}
+            {hud.muted ? "SOUND: OFF" : "SOUND: ON"}
           </button>
         </div>
       </div>
@@ -92,11 +92,11 @@ export function HudLayer({
                 : "border-[#3a3a3a] bg-[#0a0a0a]/65 text-[#777]"
             }`}
           >
-            ↑ YUKARI SÜRÜKLE: RAKİBE ATEŞ {hud.aimState.zone === "opp" && hud.aimState.canConfirm ? "(BIRAK = ATEŞ)" : ""}
+            ↑ DRAG UP: SHOOT RIVAL {hud.aimState.zone === "opp" && hud.aimState.canConfirm ? "(RELEASE = FIRE)" : ""}
           </div>
 
           <div className="mx-auto border border-[#3a3a3a] bg-[#0a0a0a]/75 px-3 py-1 font-mono text-[10px] tracking-[0.16em] text-[#9a9a9a] uppercase">
-            ORTA BÖLGE = İPTAL · ESC İPTAL · ↑/↓ + ENTER
+            MIDDLE = CANCEL · ESC CANCEL · ↑/↓ + ENTER
           </div>
 
           <div
@@ -108,7 +108,7 @@ export function HudLayer({
                 : "border-[#3a3a3a] bg-[#0a0a0a]/65 text-[#777]"
             }`}
           >
-            ↓ AŞAĞI SÜRÜKLE: KENDİNE ATEŞ {hud.aimState.zone === "self" && hud.aimState.canConfirm ? "(BIRAK = ATEŞ)" : ""}
+            ↓ DRAG DOWN: SHOOT YOURSELF {hud.aimState.zone === "self" && hud.aimState.canConfirm ? "(RELEASE = FIRE)" : ""}
           </div>
         </div>
       )}
@@ -116,14 +116,14 @@ export function HudLayer({
       {/* Lockpick target selection prompt */}
       {hud.lockpickSlot !== null && (
         <div className="pointer-events-auto mx-auto mb-4 flex items-center gap-3 border border-[#e5c378] bg-[#16120b]/95 px-4 py-2 font-mono text-xs tracking-[0.14em] text-[#eaeaea] uppercase">
-          <span>MAYMUNCUK: RAKİBİN ÇALINACAK EŞYASINI SEÇ</span>
+          <span>LOCKPICK: PICK A RIVAL ITEM TO STEAL</span>
           {hud.onCancelLockpick && (
             <button
               type="button"
               onClick={hud.onCancelLockpick}
               className="cursor-pointer border border-[#c6a15b]/60 px-2 py-0.5 text-[10px] text-[#c6a15b] hover:bg-[#2a2216]"
             >
-              İPTAL
+              CANCEL
             </button>
           )}
         </div>
@@ -133,9 +133,9 @@ export function HudLayer({
       <div className="flex items-end justify-between gap-3">
         <div className="font-mono text-[10px] tracking-[0.14em] text-[#9a9a9a] uppercase">
           {hud.canAct && !aiming && hud.lockpickSlot === null
-            ? "SİLAHA TIKLA VE SÜRÜKLE · VEYA EŞYA SEÇ"
+            ? "CLICK AND DRAG THE GUN · OR PICK AN ITEM"
             : hud.txPhase === "sent" || hud.txPhase === "holding"
-              ? stallCaption ?? "HOROZ BEKLENİYOR..."
+              ? stallCaption ?? "WAITING FOR THE HAMMER..."
               : hud.activeBeatId
                 ? `BEAT: ${hud.activeBeatId}`
                 : ""}

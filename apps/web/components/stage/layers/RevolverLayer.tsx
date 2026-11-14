@@ -188,7 +188,7 @@ export function RevolverLayer({
       {canPickUp && gunHolder === "table" && (
         <button
           type="button"
-          aria-label="Revolveri al ve nişan al"
+          aria-label="Pick up the revolver and aim"
           onPointerDown={onGunPointerDown}
           style={{
             left: `${REVOLVER_TABLE_ANCHOR.x * 100}%`,
@@ -197,7 +197,7 @@ export function RevolverLayer({
           className="pointer-events-auto absolute h-24 w-56 -translate-x-1/2 -translate-y-1/2 cursor-grab border border-[#c6a15b]/45 bg-[#c6a15b]/5 transition hover:border-[#e5c378] hover:bg-[#c6a15b]/15 active:cursor-grabbing"
         >
           <span className="pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#0a0a0a]/90 px-2 py-0.5 font-mono text-[10px] tracking-[0.16em] text-[#e5c378] uppercase">
-            SİLAHI AL / SÜRÜKLE
+            PICK UP / DRAG
           </span>
         </button>
       )}

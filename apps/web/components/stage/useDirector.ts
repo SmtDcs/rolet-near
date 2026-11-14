@@ -200,16 +200,16 @@ export function useDirector({
         setRivalClip(clip);
       }
 
-      let banner = `${isLocal ? "SEN" : "RAKİP"}: ${item ?? "EŞYA"}`;
+      let banner = `${isLocal ? "YOU" : "RIVAL"}: ${item ?? "ITEM"}`;
       let tone: StageFxState["bannerTone"] = "brass";
       if (item === "Tincture" && outcome === "Damaged") {
-        banner = `${isLocal ? "SEN" : "RAKİP"}: TENTÜR -${amount} CAN`;
+        banner = `${isLocal ? "YOU" : "RIVAL"}: TINCTURE -${amount} HP`;
         tone = "alert";
       } else if (item === "Tincture" && outcome === "Healed") {
-        banner = `${isLocal ? "SEN" : "RAKİP"}: TENTÜR +${amount} CAN`;
+        banner = `${isLocal ? "YOU" : "RIVAL"}: TINCTURE +${amount} HP`;
         tone = "patina";
       } else if (item === "Ticker" && isLocal && typeof p.pos === "number" && p.shell) {
-        banner = `TELGRAF #${p.pos + 1}: ${p.shell === "Live" ? "DOLU" : "KURU"}`;
+        banner = `TICKER #${p.pos + 1}: ${p.shell === "Live" ? "LIVE" : "BLANK"}`;
       }
 
       setFx((prev) => ({
@@ -274,7 +274,7 @@ export function useDirector({
 
           setFx((prev) => ({
             ...prev,
-            bannerText: `${live} DOLU · ${blank} KURU`,
+            bannerText: `${live} LIVE · ${blank} BLANK`,
             bannerTone: "brass",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -288,7 +288,7 @@ export function useDirector({
           playCueRef.current?.("cylinder_spin");
           setFx((prev) => ({
             ...prev,
-            bannerText: "8 HAZNE DOLDURULUYOR",
+            bannerText: "LOADING 8 CHAMBERS",
             bannerTone: "neutral",
           }));
           commitVisual((prev) => ({
@@ -313,7 +313,7 @@ export function useDirector({
           });
           setFx((prev) => ({
             ...prev,
-            bannerText: `${player === currentYou ? "SENİN" : "RAKİBİN"} EŞYALARI (+${dealt.length})`,
+            bannerText: `${player === currentYou ? "YOUR" : "RIVAL'S"} ITEMS (+${dealt.length})`,
             bannerTone: "brass",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -365,7 +365,7 @@ export function useDirector({
         }
 
         case "tension_stall": {
-          const caption = typeof p.caption === "string" ? p.caption : "mekanizma takıldı";
+          const caption = typeof p.caption === "string" ? p.caption : "mechanism jammed";
           setFx((prev) => ({ ...prev, stallCaption: caption }));
           await waitMs(Math.min(beat.durationMs, 600), epoch);
           break;
@@ -426,7 +426,7 @@ export function useDirector({
             ...prev,
             muzzleFlash: true,
             shake: "light",
-            bannerText: `DOLU FİŞEK! -${damage} CAN`,
+            bannerText: `LIVE ROUND! -${damage} HP`,
             bannerTone: "alert",
           }));
 
@@ -478,7 +478,7 @@ export function useDirector({
           setFx((prev) => ({
             ...prev,
             blackoutStage: "recover",
-            bannerText: `VURULDUN (-${damage} CAN)`,
+            bannerText: `YOU'RE HIT (-${damage} HP)`,
             bannerTone: "alert",
           }));
           const rem = Math.max(200, beat.durationMs - 1620);
@@ -500,7 +500,7 @@ export function useDirector({
           commitVisual((prev) => ({ ...prev, hammerCocked: false }));
           setFx((prev) => ({
             ...prev,
-            bannerText: "KLİK — KURU SIKI",
+            bannerText: "CLICK — BLANK",
             bannerTone: "neutral",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -586,7 +586,7 @@ export function useDirector({
           setFx((prev) => ({
             ...prev,
             loupeRevealShell: isLocal && shell ? shell : null,
-            bannerText: isLocal ? null : "RAKİP LUP KULLANDI",
+            bannerText: isLocal ? null : "RIVAL USED LOUPE",
             bannerTone: "brass",
           }));
 
@@ -629,7 +629,7 @@ export function useDirector({
           if (!isLocal) setRivalClip("use_mouth");
           setFx((prev) => ({
             ...prev,
-            bannerText: `${isLocal ? "SEN" : "RAKİP"}: PİPO +${amount} CAN`,
+            bannerText: `${isLocal ? "YOU" : "RIVAL"}: PIPE +${amount} HP`,
             bannerTone: "patina",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -670,8 +670,8 @@ export function useDirector({
           setFx((prev) => ({
             ...prev,
             bannerText: shell
-              ? `MATARA: ${shell === "Live" ? "DOLU" : "KURU"} ATILDI`
-              : "MATARA: FİŞEK ATILDI",
+              ? `FLASK: ${shell === "Live" ? "LIVE" : "BLANK"} EJECTED`
+              : "FLASK: ROUND EJECTED",
             bannerTone: shell === "Live" ? "alert" : "brass",
           }));
 
@@ -710,7 +710,7 @@ export function useDirector({
           }
           setFx((prev) => ({
             ...prev,
-            bannerText: "KELEPÇE TAKILDI",
+            bannerText: "SHACKLED",
             bannerTone: "brass",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -741,7 +741,7 @@ export function useDirector({
           if (!isLocal) setRivalClip("use_hands");
           setFx((prev) => ({
             ...prev,
-            bannerText: "NAMLU KESİLDİ — 2x HASAR",
+            bannerText: "BARREL SAWN — 2x DAMAGE",
             bannerTone: "alert",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -772,7 +772,7 @@ export function useDirector({
           }
           setFx((prev) => ({
             ...prev,
-            bannerText: `${skippedPlayer === currentYou ? "SIRAN" : "RAKİP SIRASI"} KELEPÇEYLE ATLANDI`,
+            bannerText: `${skippedPlayer === currentYou ? "YOUR TURN" : "RIVAL'S TURN"} SKIPPED (SHACKLE)`,
             bannerTone: "brass",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -793,7 +793,7 @@ export function useDirector({
           }));
           setFx((prev) => ({
             ...prev,
-            bannerText: "R3 KRİTİK: İYİLEŞME KESİLDİ",
+            bannerText: "R3 CRITICAL: NO MORE HEALING",
             bannerTone: "alert",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -818,7 +818,7 @@ export function useDirector({
           setRivalClip("round_end");
           setFx((prev) => ({
             ...prev,
-            bannerText: `ROUND BİTTİ — ${winner === currentYou ? "KAZANDIN" : "RAKİP KAZANDI"}`,
+            bannerText: `ROUND OVER — ${winner === currentYou ? "YOU WIN" : "RIVAL WINS"}`,
             bannerTone: winner === currentYou ? "patina" : "alert",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -842,7 +842,7 @@ export function useDirector({
           setRivalClip("round_end");
           setFx((prev) => ({
             ...prev,
-            bannerText: winner === currentYou ? "MAÇ ZAFERİ" : "MAÇ KAYBEDİLDİ",
+            bannerText: winner === currentYou ? "MATCH WON" : "MATCH LOST",
             bannerTone: winner === currentYou ? "patina" : "alert",
           }));
           await waitMs(beat.durationMs, epoch);
@@ -870,7 +870,7 @@ export function useDirector({
         }
 
         case "rollback_item": {
-          const reason = typeof p.reason === "string" ? p.reason : "Eşya kullanılamadı";
+          const reason = typeof p.reason === "string" ? p.reason : "Item could not be used";
           setFx((prev) => ({
             ...prev,
             stallCaption: null,

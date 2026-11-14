@@ -64,13 +64,13 @@ export function FxLayer({ fx, aim, paused = false }: FxLayerProps) {
       {/* Loupe/Ticker private shell reveal badge */}
       {fx.loupeRevealShell && (
         <div className="absolute top-[22%] left-1/2 -translate-x-1/2 border border-[#c6a15b] bg-[#0a0a0a]/95 px-4 py-2 text-center font-mono text-xs tracking-[0.18em] uppercase shadow-[0_0_24px_rgba(0,0,0,0.9)]">
-          <span className="text-[#9a9a9a]">SIRADAKİ FİŞEK: </span>
+          <span className="text-[#9a9a9a]">NEXT ROUND: </span>
           <span
             className={
               fx.loupeRevealShell === "Live" ? "font-bold text-[#e61919]" : "font-bold text-[#93c5fd]"
             }
           >
-            {fx.loupeRevealShell === "Live" ? "DOLU (LIVE)" : "KURU (BLANK)"}
+            {fx.loupeRevealShell === "Live" ? "LIVE" : "BLANK"}
           </span>
         </div>
       )}

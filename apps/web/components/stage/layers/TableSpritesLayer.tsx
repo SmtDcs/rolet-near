@@ -20,15 +20,15 @@ export interface TableSpritesLayerProps {
 }
 
 const ITEM_LABELS: Record<Item, { short: string; name: string }> = {
-  Loupe: { short: "LUP", name: "Loupe" },
-  Pipe: { short: "PİP", name: "Pipe" },
-  Flask: { short: "MAT", name: "Flask" },
-  Shackle: { short: "KEL", name: "Shackle" },
-  Hacksaw: { short: "TES", name: "Hacksaw" },
-  Ticker: { short: "TEL", name: "Ticker" },
-  Magnet: { short: "MIK", name: "Magnet" },
-  Lockpick: { short: "MAY", name: "Lockpick" },
-  Tincture: { short: "TEN", name: "Tincture" },
+  Loupe: { short: "LOU", name: "Loupe" },
+  Pipe: { short: "PIP", name: "Pipe" },
+  Flask: { short: "FLA", name: "Flask" },
+  Shackle: { short: "SHA", name: "Shackle" },
+  Hacksaw: { short: "SAW", name: "Hacksaw" },
+  Ticker: { short: "TIC", name: "Ticker" },
+  Magnet: { short: "MAG", name: "Magnet" },
+  Lockpick: { short: "LCK", name: "Lockpick" },
+  Tincture: { short: "TIN", name: "Tincture" },
 };
 
 function HpTubePanel({
@@ -114,11 +114,11 @@ export function TableSpritesLayer({
         }}
       >
         <span className="text-[#9a9a9a]">
-          RAKİP {visual.score[opp]}/2
+          RIVAL {visual.score[opp]}/2
         </span>
         <span className="text-[#c6a15b]">R{visual.round}</span>
         <span className="text-[#eaeaea]">
-          SEN {visual.score[you]}/2
+          YOU {visual.score[you]}/2
         </span>
       </div>
 
@@ -170,7 +170,7 @@ export function TableSpritesLayer({
 
       {/* HP Tube Panels */}
       <HpTubePanel
-        label="RAKİP"
+        label="RIVAL"
         hp={visual.hp[opp]}
         maxHp={visual.maxHp}
         healCut={visual.healCut[opp]}
@@ -179,7 +179,7 @@ export function TableSpritesLayer({
         align="left"
       />
       <HpTubePanel
-        label="SEN"
+        label="YOU"
         hp={visual.hp[you]}
         maxHp={visual.maxHp}
         healCut={visual.healCut[you]}
@@ -208,7 +208,7 @@ export function TableSpritesLayer({
                 : "pointer-events-none border-[#25201a] bg-[#0e0c0a]/50 text-[#3e382f]"
             }`}
             style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
-            title={item ? `${item}${stealable ? " (çal)" : ""}` : "Boş slot"}
+            title={item ? `${item}${stealable ? " (steal)" : ""}` : "Empty slot"}
           >
             <span className="font-bold tracking-wider">
               {item ? ITEM_LABELS[item].short : "—"}
@@ -245,7 +245,7 @@ export function TableSpritesLayer({
                     : "pointer-events-none border-[#241f19] bg-[#0d0b09]/55 text-[#38322a]"
             }`}
             style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
-            title={item ? `${ITEM_LABELS[item].name} kullan` : "Boş slot"}
+            title={item ? `${ITEM_LABELS[item].name} kullan` : "Empty slot"}
           >
             <span className="font-bold tracking-widest">
               {item ? ITEM_LABELS[item].short : "—"}

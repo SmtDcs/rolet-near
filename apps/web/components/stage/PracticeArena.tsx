@@ -72,18 +72,18 @@ export function PracticeArena() {
             ← ROLET
           </Link>
           <span className="font-bold tracking-[0.14em] text-[#eaeaea] uppercase">
-            PRATİK ARENA (CÜZDANSIZ)
+            PRACTICE ARENA (NO WALLET)
           </span>
           {model && (
             <span className="hidden sm:inline text-[#9a9a9a]">
-              R{model.round} · SEN {model.hp[0]}/{model.maxHp} CAN · RAKİP {model.hp[1]}/{model.maxHp} CAN · İLAN: {model.announcedLive} DOLU / {model.announcedBlank} KURU
+              R{model.round} · YOU {model.hp[0]}/{model.maxHp} HP · RIVAL {model.hp[1]}/{model.maxHp} HP · LOADED: {model.announcedLive} LIVE / {model.announcedBlank} BLANK
             </span>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-[11px] text-[#9a9a9a]">
-            <span>TOHUM:</span>
+            <span>SEED:</span>
             <input
               value={seedInput}
               onChange={(e) => setSeedInput(e.target.value)}
@@ -92,7 +92,7 @@ export function PracticeArena() {
           </label>
 
           <label className="flex items-center gap-1.5 text-[11px] text-[#9a9a9a]">
-            <span>GECİKME:</span>
+            <span>LATENCY:</span>
             <select
               value={
                 typeof latencySetting === "number" ? String(latencySetting) : "default"
@@ -103,14 +103,14 @@ export function PracticeArena() {
               }}
               className="border border-[#3a3a3a] bg-[#090909] px-2 py-1 text-[11px] text-[#eaeaea]"
             >
-              <option value="0">0 ms (Anlık)</option>
-              <option value="default">300–1500 ms (Gerçekçi)</option>
-              <option value="3000">3000 ms (Yavaş)</option>
+              <option value="0">0 ms (instant)</option>
+              <option value="default">300–1500 ms (realistic)</option>
+              <option value="3000">3000 ms (slow)</option>
             </select>
           </label>
 
           <label className="flex items-center gap-1.5 text-[11px] text-[#9a9a9a]">
-            <span>RAKİP:</span>
+            <span>RIVAL:</span>
             <select
               value={characterKind}
               onChange={(e) => setCharacterKind(e.target.value as CharacterKind)}
@@ -127,7 +127,7 @@ export function PracticeArena() {
             onClick={() => handleRestart()}
             className="cursor-pointer border border-[#c6a15b] bg-[#1d170d] px-2.5 py-1 text-[11px] font-bold text-[#e5c378] hover:bg-[#2a2113]"
           >
-            YENİ MAÇ
+            NEW MATCH
           </button>
         </div>
       </header>
@@ -140,7 +140,7 @@ export function PracticeArena() {
             transport={engine}
             you={0}
             characterKind={characterKind}
-            statusLabel={`PRATİK · ${formatLatencyLabel(latencySetting)}`}
+            statusLabel={`PRACTICE · ${formatLatencyLabel(latencySetting)}`}
             onModelChange={setModel}
           />
         </div>
@@ -150,14 +150,14 @@ export function PracticeArena() {
           <div className="pointer-events-auto absolute inset-0 z-[70] flex items-center justify-center bg-black/75 p-4">
             <div className="w-full max-w-md border border-[#c6a15b] bg-[#0f0d0a] p-6 text-center font-mono space-y-4">
               <div className="text-xs tracking-[0.2em] text-[#c6a15b] uppercase">
-                PRATİK MAÇ SONUCU
+                PRACTICE MATCH RESULT
               </div>
               <div
                 className={`text-2xl font-bold uppercase ${
                   model.winner === 0 ? "text-[#52c41a]" : "text-[#e61919]"
                 }`}
               >
-                {model.winner === 0 ? "KAZANDIN" : "KAYBETTİN"}
+                {model.winner === 0 ? "YOU WIN" : "YOU LOSE"}
               </div>
               <div className="text-xs text-[#9a9a9a]">
                 SKOR: SEN {model.score[0]} — {model.score[1]} BOT · TOHUM: {activeSeed}

@@ -327,7 +327,7 @@ export function PlayableStage({
         const oppItems = model.items[1 - you];
         const hasStealable = oppItems.some((it) => it !== "Lockpick");
         if (!hasStealable) {
-          setLocalError("Rakipte çalınacak eşya yok");
+          setLocalError("Rival has nothing to steal");
           return;
         }
         setLocalError(null);
