@@ -343,7 +343,7 @@ pub struct Match {
     score: [u8; 2],
     hp: [u8; 2],
     max_hp: u8,
-    heal_cut: bool,
+    heal_cut: [bool; 2],
     items: [Vec<Item>; 2],                // her biri ≤ 8
     load: Load,                           // aşağıda
     turn: u8,                             // 0 | 1
@@ -415,7 +415,7 @@ Depolama: bitmiş maçlar `Finished` olduktan sonra `log` ve `game.load.fixed` b
 - Her aksiyon hem `log`'a (`seq` ile) yazılır hem NEP-297 formatında `EVENT_JSON:{"standard":"rolet","version":"1.0.0","event":"shot","data":[...]}` olarak loglanır.
 - İstemci kendi hamlesinin sonucunu **işlem sonucundan** (receipt outcome'daki dönüş değeri + log) hemen alır → kendi animasyonu en hızlı yoldan çözülür.
 - Rakibin hamlelerini `get_actions(match_id, since_seq)` view çağrısını ~600 ms aralıkla yoklayarak alır (view ücretsiz). Websocket/indexer gerekmez. **[EMİN DEĞİLİM: güncel NEAR blok süresi ~0.6 s, kesinlik ~1.2 s — ölçülecek]**
-- `Action` örnekleri: `LoadStarted{live,blank,total}`, `ItemsDealt{player,items}`, `ItemUsed{player,item,slot,result}`, `Shot{player,target,shell,damage}`, `Ejected{shell}`, `TurnSkipped{player}`, `HealCut`, `RoundEnded{winner,score}`, `MatchEnded{winner,reward}`, `TimeoutClaimed{by}`.
+- `Action` örnekleri: `LoadStarted{live,blank,total}`, `ItemsDealt{player,items}`, `ItemUsed{player,item,slot,result}`, `Shot{player,target,shell,damage}`, `Ejected{shell}`, `TurnSkipped{player}`, `HealCut{player}`, `RoundEnded{winner,score}`, `MatchEnded{winner,reward}`, `TimeoutClaimed{by}`.
 - `ItemUsed.result` gizli bilgi eşyalarında yalnızca kullanan tarafın istemcisinde gösterilir (§4.6 v1).
 
 ### 4.9 Ekonomi (testnet varsayılanları)

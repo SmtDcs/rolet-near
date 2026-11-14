@@ -24,7 +24,7 @@
       4
     ],
     "max_hp": 4,
-    "heal_cut": false,
+    "heal_cut": [false, false],
     "items": [
       [
         "Loupe",

@@ -501,7 +501,7 @@ impl Contract {
                 score: [0, 0],
                 hp: [rc.start_hp, rc.start_hp],
                 max_hp: rc.start_hp,
-                heal_cut: false,
+                heal_cut: [false, false],
                 items: [Vec::new(), Vec::new()],
                 load: crate::game::Load::new(0, 0),
                 turn: m.seed[0] & 1,
@@ -1241,7 +1241,7 @@ mod tests {
         let c = setup_active();
         let mut m = c.match_or_panic(7);
         for _ in 0..40 {
-            push_action(&mut m, Action::HealCut);
+            push_action(&mut m, Action::HealCut { player: 0 });
         }
         assert_eq!(m.seq, 41); // 1 (LoadStarted) + 40
         assert_eq!(m.log.len(), LOG_CAP);

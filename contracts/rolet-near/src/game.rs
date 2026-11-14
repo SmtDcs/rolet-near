@@ -120,8 +120,8 @@ pub struct GameState {
     pub hp: [u8; 2],
     /// Bu round başındaki can (iyileşme üst sınırı).
     pub max_hp: u8,
-    /// İyileşme kesildi (R3 eşiği).
-    pub heal_cut: bool,
+    /// İyileşme kesildi (R3 eşiği; oyuncu başına).
+    pub heal_cut: [bool; 2],
     /// Oyuncu başına eşya; uzunluk <= `Config::max_items`.
     pub items: [Vec<Item>; 2],
     pub load: Load,
@@ -144,7 +144,7 @@ impl Default for GameState {
             score: [0, 0],
             hp: [0, 0],
             max_hp: 0,
-            heal_cut: false,
+            heal_cut: [false, false],
             items: [Vec::new(), Vec::new()],
             load: Load::new(0, 0),
             turn: 0,
@@ -170,7 +170,7 @@ pub enum Action {
     Shot { player: u8, target: Target, shell: Shell, damage: u8 },
     Ejected { shell: Shell },
     TurnSkipped { player: u8 },
-    HealCut,
+    HealCut { player: u8 },
     RoundEnded { winner: u8, score: [u8; 2] },
     /// `reward` yoctoNEAR cinsindendir; `U128` JSON'da string serileşir
     /// (serde_json u128 sayı aralığını aşamaz, NEAR miktarları string taşır).
@@ -443,15 +443,15 @@ fn apply_damage(
     src: &mut dyn ShellSource,
 ) -> Option<u8> {
     state.hp[victim] = state.hp[victim].saturating_sub(dmg);
-    if dmg > 0 && state.hp[victim] > 0 && !state.heal_cut {
+    if dmg > 0 && state.hp[victim] > 0 && !state.heal_cut[victim] {
         if let Some(threshold) = cfg
             .rounds
             .get(state.round.saturating_sub(1) as usize)
             .and_then(|r| r.heal_cut_at)
         {
             if state.hp[victim] <= threshold {
-                state.heal_cut = true;
-                actions.push(Action::HealCut);
+                state.heal_cut[victim] = true;
+                actions.push(Action::HealCut { player: victim as u8 });
             }
         }
     }
@@ -471,7 +471,7 @@ fn apply_damage(
     let rc = &cfg.rounds[state.round as usize - 1];
     state.hp = [rc.start_hp, rc.start_hp];
     state.max_hp = rc.start_hp;
-    state.heal_cut = false;
+    state.heal_cut = [false, false];
     state.items = [Vec::new(), Vec::new()];
     state.shackled = None;
     state.shackle_broke_this_turn = false;
@@ -600,7 +600,7 @@ fn check_item(
             }
         }
         Item::Pipe => {
-            if state.heal_cut {
+            if state.heal_cut[actor] {
                 return Err(GameError::HealBlocked);
             }
             // Maksimum candayken kullanım anlamsızdır: red, eşya korunur.
@@ -611,7 +611,7 @@ fn check_item(
         // Tincture: iyileşme kesildiyse tamamen kapalı (TASKS varsayılanı;
         // T-001 sonucuna göre yalnızca -1 yolu açılabilir).
         Item::Tincture => {
-            if state.heal_cut {
+            if state.heal_cut[actor] {
                 return Err(GameError::HealBlocked);
             }
         }
@@ -770,7 +770,7 @@ mod tests {
             score: [1, 0],
             hp: [4, 2],
             max_hp: 5,
-            heal_cut: true,
+            heal_cut: [false, true],
             items: [vec![Item::Pipe, Item::Magnet], vec![]],
             load: sample_load(),
             turn: 1,
@@ -824,7 +824,7 @@ mod tests {
             score: [0, 0],
             hp: [rc.start_hp, rc.start_hp],
             max_hp: rc.start_hp,
-            heal_cut: false,
+            heal_cut: [false, false],
             items: [vec![], vec![]],
             load,
             turn: 0,
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(st.max_hp, 4);
         assert_eq!(st.turn, 1); // kaybeden başlar
         assert_eq!(st.items[0].len(), 2);
-        assert!(!st.heal_cut);
+        assert_eq!(st.heal_cut, [false, false]);
     }
 
     /// T-104: 2. round galibiyeti → maç sonu (2 puan; §3.1).
@@ -1201,9 +1201,9 @@ mod tests {
         st.hp = [5, 3];
         st.saw_active = true;
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
-        assert!(st.heal_cut);
+        assert_eq!(st.heal_cut, [false, true]);
         assert_eq!(st.hp, [5, 1]);
-        assert_eq!(actions[2], Action::HealCut);
+        assert_eq!(actions[2], Action::HealCut { player: 1 });
     }
 
     /// T-104: öldüren atış HealCut üretmez — round zaten bitiyor.
@@ -1216,10 +1216,10 @@ mod tests {
         st.hp = [5, 2];
         st.saw_active = true;
         let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
-        assert!(!st.heal_cut);
+        assert_eq!(st.heal_cut, [false, false]);
         assert!(matches!(actions[2], Action::RoundEnded { winner: 0, .. }));
         assert!(matches!(actions[3], Action::MatchEnded { winner: 0, .. }));
-        assert!(!actions.iter().any(|a| matches!(a, Action::HealCut)));
+        assert!(!actions.iter().any(|a| matches!(a, Action::HealCut { .. })));
     }
 
     /// T-104: sırası olmayan oyuncu → hata; boş tüfek → hata; maç bitti → hata.
@@ -1305,7 +1305,7 @@ mod tests {
         assert!(st.items[0].is_empty());
         // heal_cut'ta red.
         let mut cut = item_state(3, Load::new(1, 1), vec![Item::Pipe]);
-        cut.heal_cut = true;
+        cut.heal_cut = [true, false];
         cut.hp = [3, 3];
         assert_eq!(use_at(&mut cut, 0, &mut src), Err(GameError::HealBlocked));
         assert_eq!(cut.items[0], vec![Item::Pipe]);
@@ -1662,15 +1662,15 @@ mod tests {
                     slot: 0,
                     result: ItemResult::Damaged { amount: 1 },
                 },
-                Action::HealCut,
+                Action::HealCut { player: 0 },
             ]
         );
         assert_eq!(st3.hp, [2, 3]);
-        assert!(st3.heal_cut);
+        assert_eq!(st3.heal_cut, [true, false]);
         // heal_cut'ta tamamen red.
         let mut src4 = ScriptedSource::with_rolls(vec![], vec![0]);
         let mut st4 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
-        st4.heal_cut = true;
+        st4.heal_cut = [true, false];
         assert_eq!(use_at(&mut st4, 0, &mut src4), Err(GameError::HealBlocked));
         assert_eq!(st4.items[0], vec![Item::Tincture]);
     }
@@ -1739,5 +1739,38 @@ mod tests {
         err_st.hp[0] = err_st.max_hp;
         assert_eq!(use_at(&mut err_st, 1, &mut src), Err(GameError::ItemBlocked));
         assert_eq!(err_st.items[0], vec![Item::Loupe, Item::Pipe, Item::Flask]);
+    }
+
+    /// FIX-07 (G-01): Oyuncu başına kablo — A kesikken B Pipe kullanabiliyor,
+    /// B de ≤2'ye düşünce ayrı bir `HealCut { player: 1 }` aksiyonu çıkıyor.
+    #[test]
+    fn per_player_heal_cut_allows_other_to_heal_and_emits_separate_event() {
+        let mut src = ScriptedSource::new(vec![Shell::Live, Shell::Live]);
+        let cfg = Config::default();
+        let mut st = fire_state(3, Load::new(2, 2));
+        st.hp = [3, 3];
+        st.items = [vec![Item::Pipe], vec![Item::Pipe]];
+        st.turn = 1; // B başlar → A'yı 2'ye düşürür.
+
+        let a1 = fire(&mut st, &cfg, 1, Target::Opponent, &mut src).unwrap();
+        assert!(a1.contains(&Action::HealCut { player: 0 }));
+        assert_eq!(st.heal_cut, [true, false]);
+
+        // Sıra A'da: kendi Pipe'ı engelli (kendi kablosu kesik).
+        assert_eq!(use_item(&mut st, &cfg, 0, 0, None, &mut src), Err(GameError::HealBlocked));
+
+        // B ise hâlâ Pipe kullanabiliyor; A ateş etti (B->1 veya durup önce B'ye geçelim):
+        st.turn = 1;
+        st.hp[1] = 3;
+        let b_pipe = use_item(&mut st, &cfg, 1, 0, None, &mut src).unwrap();
+        assert_eq!(st.hp[1], 4);
+        assert!(matches!(b_pipe[0], Action::ItemUsed { item: Item::Pipe, .. }));
+
+        // Şimdi B ≤ 2'ye düşünce ayrı bir HealCut { player: 1 } çıkar.
+        st.turn = 0;
+        st.hp[1] = 3;
+        let a2 = fire(&mut st, &cfg, 0, Target::Opponent, &mut src).unwrap();
+        assert!(a2.contains(&Action::HealCut { player: 1 }));
+        assert_eq!(st.heal_cut, [true, true]);
     }
 }
