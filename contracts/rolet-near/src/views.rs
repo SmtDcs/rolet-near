@@ -63,17 +63,33 @@ pub struct LeaderboardEntry {
     pub played: u32,
 }
 
+impl Contract {
+    fn lookup_match(&self, match_id: u64, players: Option<[AccountId; 2]>) -> Option<Match> {
+        let key = match players {
+            Some([a, b]) => Some(crate::matches::match_key(&a, &b, match_id)),
+            None => self.match_id_index.get(&match_id),
+        }?;
+        self.matches.get(&key)
+    }
+}
+
 #[near]
 impl Contract {
     /// Maç durumunu gizli alanlar olmadan döner (`None` = maç yok).
-    pub fn get_match(&self, match_id: U64) -> Option<MatchView> {
-        self.matches.get(&match_id.0).map(MatchView::from)
+    /// `players` verilirse doğrudan `match_key` ile, verilmezse son `match_id` diziniyle bakar.
+    pub fn get_match(&self, match_id: U64, players: Option<[AccountId; 2]>) -> Option<MatchView> {
+        self.lookup_match(match_id.0, players).map(MatchView::from)
     }
 
     /// `since_seq`'ten büyük sıra numaralı aksiyonları sırayla döner
     /// (`log` en fazla son `LOG_CAP` = 32 aksiyonu tutar).
-    pub fn get_actions(&self, match_id: U64, since_seq: u64) -> Vec<Action> {
-        let Some(m) = self.matches.get(&match_id.0) else {
+    pub fn get_actions(
+        &self,
+        match_id: U64,
+        since_seq: u64,
+        players: Option<[AccountId; 2]>,
+    ) -> Vec<Action> {
+        let Some(m) = self.lookup_match(match_id.0, players) else {
             return Vec::new();
         };
         if m.log.is_empty() || since_seq >= m.seq {
@@ -173,8 +189,8 @@ mod tests {
         let mut c = setup_contract();
         assert_eq!(c.get_config(), Config::default());
         assert_eq!(c.get_treasury(), NearToken::from_near(5));
-        assert_eq!(c.get_match(U64(999)), None);
-        assert!(c.get_actions(U64(999), 0).is_empty());
+        assert_eq!(c.get_match(U64(999), None), None);
+        assert!(c.get_actions(U64(999), 0, None).is_empty());
         assert_eq!(c.get_character("none:1".to_string()), None);
 
         switch("alice.testnet", NearToken::from_near(1), 1_000);
@@ -203,13 +219,13 @@ mod tests {
         switch("bob.testnet", NearToken::ZERO, 1_000);
         c.join(U64(7), "alice.testnet".parse().unwrap(), commit(2, "bob.testnet", 7), tb);
 
-        let view1 = c.get_match(U64(7)).unwrap();
+        let view1 = c.get_match(U64(7), None).unwrap();
         assert_eq!(view1.status, Status::Revealing);
         assert_eq!(view1.revealed, [false, false]);
 
         switch("alice.testnet", NearToken::ZERO, 1_000);
         c.reveal(U64(7), Base64VecU8([1u8; 32].to_vec()));
-        let view2 = c.get_match(U64(7)).unwrap();
+        let view2 = c.get_match(U64(7), None).unwrap();
         assert_eq!(view2.revealed, [true, false]);
 
         // JSON serileştirmesinde `secrets`, `commits`, `seed`, `draw_nonce` yok.
@@ -239,8 +255,8 @@ mod tests {
         c.reveal(U64(7), Base64VecU8([1u8; 32].to_vec()));
 
         // seq = 1 (LoadStarted).
-        assert_eq!(c.get_actions(U64(7), 0).len(), 1);
-        assert!(c.get_actions(U64(7), 1).is_empty());
+        assert_eq!(c.get_actions(U64(7), 0, None).len(), 1);
+        assert!(c.get_actions(U64(7), 1, None).is_empty());
 
         // 39 ek aksiyon → seq = 40, log = son 32 (seq 9..=40).
         let mut m = c.match_or_panic(7);
@@ -255,17 +271,17 @@ mod tests {
                 },
             );
         }
-        c.matches.insert(&7, &m);
+        c.save_match(&m);
 
         // since_seq = 0 → tam 32 tamponlanmış aksiyon.
-        let all_buffered = c.get_actions(U64(7), 0);
+        let all_buffered = c.get_actions(U64(7), 0, None);
         assert_eq!(all_buffered.len(), 32);
         // since_seq = 38 → seq 39 ve 40 (slot 39, 40).
-        let tail = c.get_actions(U64(7), 38);
+        let tail = c.get_actions(U64(7), 38, None);
         assert_eq!(tail.len(), 2);
         assert!(matches!(tail[0], Action::ItemUsed { slot: 39, .. }));
         assert!(matches!(tail[1], Action::ItemUsed { slot: 40, .. }));
-        assert!(c.get_actions(U64(7), 40).is_empty());
+        assert!(c.get_actions(U64(7), 40, None).is_empty());
         c.assert_solvent();
     }
 
@@ -297,7 +313,7 @@ mod tests {
             m.game.hp = [2, 1];
             m.game.load = Load::new(1, 1);
             m.game.turn = 0;
-            c.matches.insert(&match_id, &m);
+            c.save_match(&m);
             let mut src = ScriptedSource::new(vec![Shell::Live]);
             c.fire_with(U64(match_id), Target::Opponent, &mut src);
         };

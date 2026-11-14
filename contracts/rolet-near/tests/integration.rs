@@ -436,10 +436,13 @@ async fn fix04_low_balance_match_finishes_and_credits_owed() -> Result<(), Box<d
     let alice = worker.dev_create_account().await?;
     let bob = worker.dev_create_account().await?;
     let root = worker.root_account()?;
-    // WASM (~316 KB -> ~3.16 NEAR stake) üstünde çok az serbest bakiye bırak.
+    // WASM depolama kilidi (~10^-5 NEAR/B) üstünde çok az serbest bakiye bırak.
+    let wasm_stake = WsNearToken::from_yoctonear(
+        (wasm.len() as u128) * 10_000_000_000_000_000_000,
+    );
     let sub = root
         .create_subaccount("lowbal")
-        .initial_balance(WsNearToken::from_millinear(3_210))
+        .initial_balance(wasm_stake.saturating_add(WsNearToken::from_millinear(60)))
         .transact()
         .await?
         .into_result()?;

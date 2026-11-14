@@ -150,23 +150,64 @@ fn participant_index(m: &Match, player: &AccountId) -> usize {
     }
 }
 
+/// Oyuncu çifti ve `match_id` için deterministik depolama anahtarı (FIX-05 / S-04).
+/// Yabancı bir hesabın bilinen `match_id`'yi önceden açarak çifti engellemesini önler.
+pub(crate) fn match_key(a: &AccountId, b: &AccountId, match_id: u64) -> [u8; 32] {
+    let (lo, hi) = if a.as_str() <= b.as_str() { (a, b) } else { (b, a) };
+    let mut buf = Vec::with_capacity(lo.as_str().len() + hi.as_str().len() + 10);
+    buf.extend_from_slice(lo.as_bytes());
+    buf.push(0);
+    buf.extend_from_slice(hi.as_bytes());
+    buf.push(0);
+    buf.extend_from_slice(&match_id.to_le_bytes());
+    env::sha256_array(&buf)
+}
+
 impl Contract {
     /// Oyuncunun durumu; yoksa sıfırlardan kurar (kayıt oluşturmaz).
     pub fn player_state(&self, account: &AccountId) -> PlayerState {
         self.players.get(account).unwrap_or_default()
     }
 
-    /// Maç kaydı ya da panik.
+    /// `match_id` üzerinden son maç kaydı ya da panik (test ve view desteği).
     pub fn match_or_panic(&self, match_id: u64) -> Match {
-        match self.matches.get(&match_id) {
+        match self.match_id_index.get(&match_id).and_then(|k| self.matches.get(&k)) {
             Some(m) => m,
             None => panic!("no such match"),
         }
     }
 
-    /// Join maliyetini uygular: durability −1, token kilidi, `active_match`.
+    /// Çağırıcı ve `match_id` için maçı çözer: önce çağırıcının kendi aktif anahtarına,
+    /// yoksa `match_id` dizinine bakar (yabancı/katılmamış çağrıcıların beklenen
+    /// `"not a participant"` / `"only the first participant can cancel"` hatalarını
+    /// üretebilmesi için).
+    fn resolve_match_for_player(&self, player: &AccountId, match_id: u64) -> ([u8; 32], Match) {
+        if let Some(key) = self.active_keys.get(player) {
+            if let Some(m) = self.matches.get(&key) {
+                if m.id == match_id {
+                    return (key, m);
+                }
+            }
+        }
+        if let Some(key) = self.match_id_index.get(&match_id) {
+            if let Some(m) = self.matches.get(&key) {
+                return (key, m);
+            }
+        }
+        panic!("no such match");
+    }
+
+    /// Testlerde maçı `match_key` üzerinden günceller.
+    #[cfg(test)]
+    pub(crate) fn save_match(&mut self, m: &Match) {
+        let key = match_key(&m.players[0], &m.players[1], m.id);
+        self.matches.insert(&key, m);
+        self.match_id_index.insert(&m.id, &key);
+    }
+
+    /// Join maliyetini uygular: durability −1, token kilidi, `active_match`, `active_keys`.
     /// İptal/timeout yolları bunun tamamını geri alır.
-    fn lock_in(&mut self, player: &AccountId, match_id: u64, token_id: &TokenId) {
+    fn lock_in(&mut self, player: &AccountId, match_id: u64, key: &[u8; 32], token_id: &TokenId) {
         let mut character = self.character.get(token_id).expect("karakter durumu kayıtlı");
         require!(character.durability > 0, "durability exhausted");
         require!(character.locked_in.is_none(), "token locked in a match");
@@ -178,6 +219,7 @@ impl Contract {
         require!(state.active_match.is_none(), "already in an active match");
         state.active_match = Some(match_id);
         self.players.insert(player, &state);
+        self.active_keys.insert(player, key);
         // Leaderboard listesi (T-115).
         if !self.player_index.contains(player) {
             self.player_index.insert(player);
@@ -186,6 +228,7 @@ impl Contract {
 
     /// Bir tarafın join maliyetini geri alır (cancel / reveal-timeout).
     /// `refund_durability = false`: ceza yolu (reveal timeout'ta geciken taraf).
+    /// Oyuncunun hiçbir geçmiş kaydı kalmadıysa `players`/`player_index` de silinir (S-03).
     fn release(&mut self, player: &AccountId, match_id: u64, token_id: &TokenId, refund_durability: bool) {
         let mut character = self.character.get(token_id).expect("karakter durumu kayıtlı");
         if refund_durability {
@@ -193,11 +236,18 @@ impl Contract {
         }
         character.locked_in = None;
         self.character.insert(token_id, &character);
+        self.active_keys.remove(player);
+
         let mut state = self.player_state(player);
         if state.active_match == Some(match_id) {
             state.active_match = None;
         }
-        self.players.insert(player, &state);
+        if state == PlayerState::default() {
+            self.players.remove(player);
+            self.player_index.remove(player);
+        } else {
+            self.players.insert(player, &state);
+        }
     }
 
     /// Maçı kazanan ile sonlandırır (T-112 `fire`/`use_item`, T-113 `claim_timeout`):
@@ -211,7 +261,8 @@ impl Contract {
         // T-116: bitmiş maçta büyük alanlar budanır, özet (skor, can, oyuncular, seq) kalır.
         m.log.clear();
         m.game.load.fixed.clear();
-        self.matches.insert(&m.id, m);
+        let key = match_key(&m.players[0], &m.players[1], m.id);
+        self.matches.insert(&key, m);
 
         for i in 0..2usize {
             let token_id = &m.tokens[i];
@@ -223,6 +274,7 @@ impl Contract {
             }
 
             let account = &m.players[i];
+            self.active_keys.remove(account);
             let mut st = self.player_state(account);
             if st.active_match == Some(m.id) {
                 st.active_match = None;
@@ -266,7 +318,7 @@ impl Contract {
         require_direct_call();
         let storage_before = env::storage_usage();
         let player = env::predecessor_account_id();
-        let mut m = self.match_or_panic(match_id);
+        let (key, mut m) = self.resolve_match_for_player(&player, match_id);
         require!(m.status == Status::Active, "match is not active");
         let actor = participant_index(&m, &player) as u8;
 
@@ -291,7 +343,7 @@ impl Contract {
             self.finish_match(&mut m, winner, storage_before);
         } else {
             m.deadline_ms = now_ms() + self.config.turn_ms;
-            self.matches.insert(&m.id, &m);
+            self.matches.insert(&key, &m);
             self.settle_storage(storage_before);
         }
         actions
@@ -348,7 +400,8 @@ impl Contract {
             "not token owner"
         );
 
-        match self.matches.get(&match_id) {
+        let key = match_key(&player, &opponent, match_id);
+        match self.matches.get(&key) {
             None => {
                 require!(
                     self.treasury >= self.config.min_treasury,
@@ -370,8 +423,9 @@ impl Contract {
                     seq: 0,
                     log: Vec::new(),
                 };
-                self.lock_in(&player, match_id, &token_id);
-                self.matches.insert(&match_id, &m);
+                self.lock_in(&player, match_id, &key, &token_id);
+                self.matches.insert(&key, &m);
+                self.match_id_index.insert(&match_id, &key);
             }
             Some(mut m) => {
                 require!(m.status == Status::Pending, "match already taken");
@@ -381,25 +435,28 @@ impl Contract {
                 m.commits[1] = commit;
                 m.status = Status::Revealing;
                 m.reveal_deadline_ms = now_ms() + self.config.reveal_ms;
-                self.lock_in(&player, match_id, &token_id);
-                self.matches.insert(&match_id, &m);
+                self.lock_in(&player, match_id, &key, &token_id);
+                self.matches.insert(&key, &m);
+                self.match_id_index.insert(&match_id, &key);
             }
         }
         self.settle_storage(storage_before);
     }
 
     /// Yalnızca `Pending` maçta ilk katılan iptal edebilir (DESIGN §4.4):
-    /// durability iade, kilit açılır, maç `Cancelled`.
+    /// durability iade, kilit açılır, maç kaydı silinir (S-03).
     pub fn cancel(&mut self, match_id: U64) {
         require_direct_call();
         let storage_before = env::storage_usage();
         let player = env::predecessor_account_id();
-        let mut m = self.match_or_panic(match_id.0);
+        let (key, m) = self.resolve_match_for_player(&player, match_id.0);
         require!(m.status == Status::Pending, "match is not pending");
         require!(m.players[0] == player, "only the first participant can cancel");
-        self.release(&m.players[0].clone(), m.id, &m.tokens[0].clone(), true);
-        m.status = Status::Cancelled;
-        self.matches.insert(&m.id, &m);
+        self.release(&m.players[0], m.id, &m.tokens[0], true);
+        self.matches.remove(&key);
+        if self.match_id_index.get(&m.id) == Some(key) {
+            self.match_id_index.remove(&m.id);
+        }
         self.settle_storage(storage_before);
     }
 
@@ -415,7 +472,7 @@ impl Contract {
         let storage_before = env::storage_usage();
         require!(secret.0.len() == 32, "secret must be 32 bytes");
         let player = env::predecessor_account_id();
-        let mut m = self.match_or_panic(match_id.0);
+        let (key, mut m) = self.resolve_match_for_player(&player, match_id.0);
         require!(m.status == Status::Revealing, "match is not revealing");
         let idx = participant_index(&m, &player);
         require!(m.secrets[idx].is_none(), "already revealed");
@@ -463,7 +520,7 @@ impl Contract {
             };
             push_action(&mut m, action);
         }
-        self.matches.insert(&m.id, &m);
+        self.matches.insert(&key, &m);
         self.settle_storage(storage_before);
     }
 
@@ -497,7 +554,7 @@ impl Contract {
         require_direct_call();
         let storage_before = env::storage_usage();
         let caller = env::predecessor_account_id();
-        let mut m = self.match_or_panic(match_id.0);
+        let (key, mut m) = self.resolve_match_for_player(&caller, match_id.0);
         let caller_idx = participant_index(&m, &caller);
         let now = now_ms();
         let mut produced = Vec::new();
@@ -518,12 +575,13 @@ impl Contract {
                     let tok = m.tokens[i].clone();
                     self.release(&acc, m.id, &tok, refund);
                 }
-                m.status = Status::Cancelled;
-                m.reveal_deadline_ms = 0;
+                self.matches.remove(&key);
+                if self.match_id_index.get(&m.id) == Some(key) {
+                    self.match_id_index.remove(&m.id);
+                }
                 let action = Action::TimeoutClaimed { by: caller_idx as u8 };
-                push_action(&mut m, action.clone());
+                crate::events::log_action(&action);
                 produced.push(action);
-                self.matches.insert(&m.id, &m);
                 self.settle_storage(storage_before);
             }
             Status::Active => {
@@ -656,7 +714,7 @@ mod tests {
         c.assert_solvent();
     }
 
-    /// T-110: üçüncü hesap mevcut maça giremez.
+    /// T-110: Revealing durumundaki çifte tekrar join çağrılamaz.
     #[test]
     #[should_panic(expected = "match already taken")]
     fn third_account_cannot_join_taken_match() {
@@ -664,34 +722,30 @@ mod tests {
         c.join(U64(7), "bob.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
         switch("bob.testnet", NearToken::ZERO);
         c.join(U64(7), "alice.testnet".parse().unwrap(), commitment_bytes(2), bob_token(&c));
-        // Charlie'nin kendi karakteri olsa da maç artık dolu.
-        switch("charlie.testnet", NearToken::from_near(1));
-        c.buy_character(Kind::Kacak);
-        c.join(U64(7), "alice.testnet".parse().unwrap(), commitment_bytes(3), "kacak:3".to_string());
+        c.join(U64(7), "alice.testnet".parse().unwrap(), commitment_bytes(3), bob_token(&c));
     }
 
-    /// T-110: beklenen rakip uyuşmazsa (karşılıklı adlandırma) red.
+    /// T-110: aynı başlatan kendi bekleyen maçına ikinci kez rakip olarak giremez.
     #[test]
     #[should_panic(expected = "opponent mismatch")]
     fn opponent_mismatch_rejected() {
         let mut c = setup();
         c.join(U64(7), "bob.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
-        switch("bob.testnet", NearToken::ZERO);
-        // bekleyen maç Alice'i bekliyor; Bob Carol adını veriyor.
         c.join(
             U64(7),
-            "carol.testnet".parse().unwrap(),
+            "bob.testnet".parse().unwrap(),
             commitment_bytes(2),
-            bob_token(&c),
+            alice_token(&c),
         );
     }
 
-    /// T-110: beklenen olmayan hesap (üçüncü) Pending maça giremez.
+    /// FIX-05 (S-04): yabancı hesabın aynı `match_id` ile ön-katılımı çiftin maçını engellemez/kapatamaz.
     #[test]
-    #[should_panic(expected = "opponent mismatch")]
     fn uninvited_account_cannot_join_pending() {
         let mut c = setup();
         c.join(U64(7), "bob.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
+        // Charlie aynı match_id=7 ile Alice veya Dave'i hedefleyerek kendi anahtarında Pending açar;
+        // bu durum (alice, bob, 7) maçını etkilemez.
         switch("charlie.testnet", NearToken::from_near(1));
         c.buy_character(Kind::Kacak);
         c.join(
@@ -700,6 +754,18 @@ mod tests {
             commitment_bytes(3),
             "kacak:3".to_string(),
         );
+        // Bob çiftin maçına normal şekilde katılır.
+        switch("bob.testnet", NearToken::ZERO);
+        c.join(U64(7), "alice.testnet".parse().unwrap(), commitment_bytes(2), bob_token(&c));
+        let ab = c
+            .get_match(
+                U64(7),
+                Some(["alice.testnet".parse().unwrap(), "bob.testnet".parse().unwrap()]),
+            )
+            .unwrap();
+        assert_eq!(ab.status, Status::Revealing);
+        assert_eq!(ab.players, ["alice.testnet", "bob.testnet"]);
+        c.assert_solvent();
     }
 
     /// T-110: durability 0 karakterle join red; hiçbir şey yazılmaz.
@@ -755,14 +821,17 @@ mod tests {
         c.join(U64(8), "carol.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
     }
 
-    /// T-110: cancel iade eder (durability + kilit + active_match).
+    /// T-110 + FIX-05: cancel iade eder (durability + kilit + active_match),
+    /// maçı siler ve depolamayı başlangıca döndürür.
     #[test]
     fn cancel_refunds_and_unlocks() {
         let mut c = setup();
+        let storage_before = env::storage_usage();
         c.join(U64(7), "bob.testnet".parse().unwrap(), commitment_bytes(1), alice_token(&c));
+        assert!(env::storage_usage() > storage_before);
         c.cancel(U64(7));
-        let m = c.match_or_panic(7);
-        assert_eq!(m.status, Status::Cancelled);
+        assert!(c.get_match(U64(7), None).is_none());
+        assert_eq!(env::storage_usage(), storage_before);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 10);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
         assert_eq!(c.player_state(&"alice.testnet".parse::<AccountId>().unwrap()).active_match, None);
@@ -1012,7 +1081,7 @@ mod tests {
         let mut m = c.match_or_panic(7);
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
-        c.matches.insert(&7, &m);
+        c.save_match(&m);
 
         // Fişek sırası:
         // R1: Live (A->B), Blank (B->B), Blank (B->A), Live (A->B, R1 biter)
@@ -1120,7 +1189,7 @@ mod tests {
         m.game.hp = [2, 1];
         m.game.load = Load::new(1, 1);
         m.game.turn = 0;
-        c.matches.insert(&7, &m);
+        c.save_match(&m);
 
         let mut src = ScriptedSource::new(vec![Shell::Live]);
         switch_at("alice.testnet", NearToken::ZERO, 2_000);
@@ -1268,9 +1337,7 @@ mod tests {
         let actions = c.claim_timeout(U64(7));
         assert_eq!(actions, vec![Action::TimeoutClaimed { by: 0 }]);
 
-        let m = c.match_or_panic(7);
-        assert_eq!(m.status, Status::Cancelled);
-        assert_eq!(m.winner, None);
+        assert!(c.get_match(U64(7), None).is_none());
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 10);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
         assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 9);
@@ -1291,13 +1358,13 @@ mod tests {
         c.claim_timeout(U64(7));
     }
 
-    /// T-113: iki taraf da açmadıysa süre dolunca kilitler çözülür (iadesiz).
+    /// T-113: iki taraf da açmadıysa süre dolunca kilitler çözülür (iadesiz) ve maç silinir.
     #[test]
     fn reveal_timeout_when_neither_revealed_unsticks_both_without_refund() {
         let mut c = setup_revealing_at_1000();
         switch_at("bob.testnet", NearToken::ZERO, 61_000);
         c.claim_timeout(U64(7));
-        assert_eq!(c.match_or_panic(7).status, Status::Cancelled);
+        assert!(c.get_match(U64(7), None).is_none());
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 9);
         assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 9);
         assert_eq!(c.player_state(&"alice.testnet".parse().unwrap()).active_match, None);
@@ -1435,7 +1502,7 @@ mod tests {
         m.game.max_hp = 4;
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
-        c.matches.insert(&7, &m);
+        c.save_match(&m);
 
         let mut src = ScriptedSource::new(vec![Shell::Blank, Shell::Blank, Shell::Live]);
         switch_at("alice.testnet", NearToken::ZERO, 2_000);
@@ -1550,7 +1617,7 @@ mod tests {
         m.game.hp = [2, 1];
         m.game.load = Load::new(1, 1);
         m.game.turn = 0;
-        c.matches.insert(&7, &m);
+        c.save_match(&m);
 
         // Treasury muhasebede yüksek görünse bile gerçek serbest bakiye ödülü
         // karşılamıyorsa LackBalanceForState riski yerine owed yazılır.
@@ -1600,5 +1667,55 @@ mod tests {
         let claimed = c.claim_reward();
         assert_eq!(claimed, NearToken::from_millinear(30));
         assert_eq!(c.player_state(&alice).owed, NearToken::from_millinear(70));
+    }
+
+    // ------------------------------------------------------------------
+    // FIX-05: Kayıt silme & match_key (S-03, S-04)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn stranger_cannot_hijack_or_close_pair_match() {
+        let mut c = setup();
+        // Yabancı hesap (charlie) aynı match_id=7'yi dave ile önceden açsa bile
+        // (alice, bob, 7) maçını engelleyemez ya da kapatamaz.
+        switch("charlie.testnet", NearToken::from_near(1));
+        c.buy_character(Kind::Kacak);
+        c.join(
+            U64(7),
+            "dave.testnet".parse().unwrap(),
+            commitment_bytes(9),
+            "kacak:3".to_string(),
+        );
+
+        // Alice ve Bob aynı match_id=7 ile maç açıp reveal aşamasına geçer.
+        switch("alice.testnet", NearToken::ZERO);
+        c.join(U64(7), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", 7), alice_token(&c));
+        switch("bob.testnet", NearToken::ZERO);
+        c.join(U64(7), "alice.testnet".parse().unwrap(), real_commit(2, "bob.testnet", 7), bob_token(&c));
+
+        // Charlie kendi Pending maçını iptal etse bile (alice, bob, 7) açık ve sağlam kalır.
+        switch("charlie.testnet", NearToken::ZERO);
+        c.cancel(U64(7));
+        let ab = c
+            .get_match(
+                U64(7),
+                Some(["alice.testnet".parse().unwrap(), "bob.testnet".parse().unwrap()]),
+            )
+            .unwrap();
+        assert_eq!(ab.status, Status::Revealing);
+
+        // Alice ve Bob reveal edip oynayabilir; charlie dışarıdan cancel/reveal/claim edemez.
+        switch("alice.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(1));
+        switch("bob.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(2));
+        let ab = c
+            .get_match(
+                U64(7),
+                Some(["alice.testnet".parse().unwrap(), "bob.testnet".parse().unwrap()]),
+            )
+            .unwrap();
+        assert_eq!(ab.status, Status::Active);
+        c.assert_solvent();
     }
 }

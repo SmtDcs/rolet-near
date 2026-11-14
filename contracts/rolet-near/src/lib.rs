@@ -43,8 +43,12 @@ pub struct Contract {
     mint_nonce: u64,
     /// Oyuncu başına maç/istatistik/ödül durumu (DESIGN §4.5, T-110).
     players: LookupMap<AccountId, PlayerState>,
-    /// Maçlar (T-110).
-    matches: LookupMap<u64, Match>,
+    /// Maçlar: `sha256(min(a,b) || 0 || max(a,b) || 0 || match_id)` anahtarlı (T-110, FIX-05).
+    matches: LookupMap<[u8; 32], Match>,
+    /// Oyuncunun aktif/bekleyen maç anahtarı (S-04).
+    active_keys: LookupMap<AccountId, [u8; 32]>,
+    /// `match_id` -> son maç anahtarı dizini (`get_match(id, None)` ve dışarıdan doğrulama için).
+    match_id_index: LookupMap<u64, [u8; 32]>,
     /// Leaderboard için oyuncu listesi (T-115).
     player_index: UnorderedSet<AccountId>,
 }
@@ -59,6 +63,8 @@ enum StorageKey {
     Players,
     Matches,
     PlayerIndex,
+    ActiveKeys,
+    MatchIdIndex,
 }
 
 #[near]
@@ -83,6 +89,8 @@ impl Contract {
             mint_nonce: 0,
             players: LookupMap::new(StorageKey::Players),
             matches: LookupMap::new(StorageKey::Matches),
+            active_keys: LookupMap::new(StorageKey::ActiveKeys),
+            match_id_index: LookupMap::new(StorageKey::MatchIdIndex),
             player_index: UnorderedSet::new(StorageKey::PlayerIndex),
         }
     }
