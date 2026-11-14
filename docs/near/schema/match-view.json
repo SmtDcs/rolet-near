@@ -50,7 +50,8 @@
     "turn": 0,
     "shackled": null,
     "shackle_broke_this_turn": false,
-    "saw_active": false
+    "saw_active": false,
+    "round_load": 0
   },
   "reveal_deadline_ms": 1731590060000,
   "deadline_ms": 1731590105000,

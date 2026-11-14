@@ -133,6 +133,8 @@ pub struct GameState {
     pub shackle_broke_this_turn: bool,
     /// Testere aktif: bir sonraki atış 2 hasar verir.
     pub saw_active: bool,
+    /// Bu round'da dağıtılan yükleme sayısı (preset R1/R2 yükleri için).
+    pub round_load: u8,
 }
 
 /// Maçın `Revealing` aşamasındaki (oyunun kurulmadan önceki) yer tutucusu.
@@ -151,6 +153,7 @@ impl Default for GameState {
             shackled: None,
             shackle_broke_this_turn: false,
             saw_active: false,
+            round_load: 0,
         }
     }
 }
@@ -353,14 +356,25 @@ impl Load {
     }
 }
 
-/// Yeni yükleme üretir (DESIGN §4.6): `total = 2 + roll(7) % 7` (2–8),
-/// R1'de `total <= 4` [KARAR]; `live = clamp(total/2 + delta, 1, total-1)`,
-/// `delta = roll(3) - 1`. Yalnızca sayılar yazılır; hiçbir konum çekilmez.
-pub fn new_load(round: u8, src: &mut dyn ShellSource) -> Load {
-    let total = 2 + (src.roll(7) % 7) as u8;
-    let total = if round == 1 { total.min(4) } else { total };
-    let delta = src.roll(3) as i16 - 1;
-    let live = ((total as i16) / 2 + delta).clamp(1, total as i16 - 1) as u8;
+/// Yeni yükleme üretir (FIX-09 / G-03):
+/// - R1 `load_index < cfg.r1_loads.len()`: preset çift `(dolu, boş)` (vars. `(1, 2)`, `(3, 2)`).
+/// - R2 `load_index == 0` ve `cfg.r2_first_load = Some((dolu, boş))`: preset `(1, 1)`.
+/// - Diğer tüm yüklemelerde DoN formülü: `total = 2 + roll(7) % 7` (2–8, R1'de `<= 4`),
+///   `live = (total / 2).max(1)` (her zaman `1 <= live <= blank`).
+pub fn new_load(round: u8, load_index: u8, cfg: &Config, src: &mut dyn ShellSource) -> Load {
+    if round == 1 {
+        if let Some(&(live, blank)) = cfg.r1_loads.get(load_index as usize) {
+            return Load::new(live, blank);
+        }
+    }
+    if round == 2 && load_index == 0 {
+        if let Some((live, blank)) = cfg.r2_first_load {
+            return Load::new(live, blank);
+        }
+    }
+    let raw = 2 + (src.roll(7) % 7) as u8;
+    let total = if round == 1 { raw.min(4) } else { raw };
+    let live = (total / 2).max(1);
     Load::new(live, total - live)
 }
 
@@ -420,7 +434,8 @@ pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource
 /// `state.load`'a yeni yükleme kurar ve `LoadStarted` + (R2/R3'te) eşya
 /// dağıtım aksiyonlarını üretir — `fire` ve `Flask`/`Tincture` ortak yolu.
 fn reload(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource, actions: &mut Vec<Action>) {
-    state.load = new_load(state.round, src);
+    state.load = new_load(state.round, state.round_load, cfg, src);
+    state.round_load = state.round_load.saturating_add(1);
     actions.push(Action::LoadStarted {
         live: state.load.announced_live,
         blank: state.load.announced_blank,
@@ -476,6 +491,7 @@ fn apply_damage(
     state.shackled = None;
     state.shackle_broke_this_turn = false;
     state.saw_active = false;
+    state.round_load = 0;
     state.turn = victim as u8;
     reload(state, cfg, src, actions);
     Some(winner)
@@ -777,6 +793,7 @@ mod tests {
             shackled: Some(0),
             shackle_broke_this_turn: false,
             saw_active: true,
+            round_load: 1,
         }
     }
 
@@ -831,41 +848,67 @@ mod tests {
             shackled: None,
             shackle_broke_this_turn: false,
             saw_active: false,
+            round_load: 1,
         }
     }
 
-    /// T-103: DESIGN §4.6 formülü birebir uygulanıyor.
+    /// T-103 + FIX-09: preset R1/R2 yükleri ve DoN `live = max(1, total/2)` formülü.
     #[test]
     fn new_load_follows_design_formula() {
-        // total = 2 + roll(7) % 7 = 7; delta = 0 - 1 = -1; live = 3 - 1 = 2.
-        let mut src = ScriptedSource::with_rolls(vec![], vec![5, 0]);
-        let load = new_load(3, &mut src);
-        assert_eq!((load.announced_live, load.announced_blank), (2, 5));
-        // R1: total 8 -> 4'e kesilir; delta = 2 - 1 = +1; live = 2 + 1 = 3.
-        let mut src = ScriptedSource::with_rolls(vec![], vec![6, 2]);
-        let load = new_load(1, &mut src);
-        assert_eq!((load.announced_live, load.announced_blank), (3, 1));
-        // total = 2; delta = 0 - 1 = -1; clamp -> live = 1.
-        let mut src = ScriptedSource::with_rolls(vec![], vec![0, 0]);
-        let load = new_load(2, &mut src);
-        assert_eq!((load.announced_live, load.announced_blank), (1, 1));
+        let cfg = Config::default();
+        // R1 preset sırası: (1, 2), (3, 2); sonrası DoN (<= 4).
+        let mut src = ScriptedSource::with_rolls(vec![], vec![6]);
+        assert_eq!(
+            (
+                new_load(1, 0, &cfg, &mut src).announced_live,
+                new_load(1, 0, &cfg, &mut src).announced_blank,
+            ),
+            (1, 2)
+        );
+        assert_eq!(
+            (
+                new_load(1, 1, &cfg, &mut src).announced_live,
+                new_load(1, 1, &cfg, &mut src).announced_blank,
+            ),
+            (3, 2)
+        );
+        let r1_extra = new_load(1, 2, &cfg, &mut src); // raw=8 -> clamped 4 -> (2, 2)
+        assert_eq!((r1_extra.announced_live, r1_extra.announced_blank), (2, 2));
+
+        // R2 ilk yükü preset (1, 1); sonraki yük DoN.
+        let mut src = ScriptedSource::with_rolls(vec![], vec![5]);
+        let r2_first = new_load(2, 0, &cfg, &mut src);
+        assert_eq!((r2_first.announced_live, r2_first.announced_blank), (1, 1));
+        let r2_next = new_load(2, 1, &cfg, &mut src); // total=7 -> live=3, blank=4
+        assert_eq!((r2_next.announced_live, r2_next.announced_blank), (3, 4));
+
+        // R3 DoN: total = 2 + roll(7) = 7 -> live = 3, blank = 4.
+        let mut src = ScriptedSource::with_rolls(vec![], vec![5]);
+        let r3 = new_load(3, 0, &cfg, &mut src);
+        assert_eq!((r3.announced_live, r3.announced_blank), (3, 4));
     }
 
-    /// T-103: 10 000 deterministik tohumla yükleme ve dağıtım sınırları asla aşılmıyor.
+    /// T-103 + FIX-09: 10 000 tohumda DoN formülü `1 <= live <= blank`, R1 yükleri (1,2),(3,2).
     #[test]
     fn new_load_and_deal_bounds_hold_for_10000_seeds() {
         let cfg = Config::default();
         for seed in 1..=10_000u64 {
             let mut src = XorshiftRng::new(seed);
-            for round in 1u8..=3 {
-                let load = new_load(round, &mut src);
+            // R1 ilk iki yük sırayla (1,2) ve (3,2).
+            let l0 = new_load(1, 0, &cfg, &mut src);
+            let l1 = new_load(1, 1, &cfg, &mut src);
+            assert_eq!((l0.live_left, l0.blank_left), (1, 2));
+            assert_eq!((l1.live_left, l1.blank_left), (3, 2));
+
+            for (round, load_idx) in [(1u8, 2u8), (2u8, 1u8), (3u8, 0u8)] {
+                let load = new_load(round, load_idx, &cfg, &mut src);
                 let total = load.remaining;
                 assert!(total >= 2 && total <= 8, "total {total} (seed {seed}, round {round})");
                 if round == 1 {
                     assert!(total <= 4, "R1 total {total} (seed {seed})");
                 }
                 assert!(load.live_left >= 1, "live {} (seed {seed}, round {round})", load.live_left);
-                assert!(load.blank_left >= 1, "blank {}", load.blank_left);
+                assert!(load.live_left <= load.blank_left, "live {} > blank {} (seed {seed}, round {round})", load.live_left, load.blank_left);
                 assert_eq!(load.live_left + load.blank_left, total);
                 assert_eq!(load.announced_live, load.live_left);
                 assert_eq!(load.announced_blank, load.blank_left);
@@ -1140,15 +1183,15 @@ mod tests {
         assert_eq!(st.hp, [3, 4]);
     }
 
-    /// T-104: son fişek R1'de → yükleme var, eşya yok.
+    /// T-104: son fişek R1'de → ikinci R1 preset yükü (3, 2), eşya yok.
     #[test]
     fn r1_reload_deals_no_items() {
-        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0, 0]);
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0]);
         let mut st = fire_state(1, Load::new(1, 1));
         let mut actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
         actions.extend(fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap());
         assert_eq!(actions.len(), 5);
-        assert_eq!(actions[4], Action::LoadStarted { live: 1, blank: 1, total: 2 });
+        assert_eq!(actions[4], Action::LoadStarted { live: 3, blank: 2, total: 5 });
         assert!(st.items[0].is_empty() && st.items[1].is_empty());
     }
 

@@ -382,8 +382,8 @@ Sorun: NEAR'da kontrat durumu herkese açıktır. Fişek sırası yükleme anın
 - v2 fikri (uygulanmaz, sadece belgelenir): iki taraflı parça-sır protokolü veya TEE tabanlı bir "krupiye" ajanı ile gerçek özel bilgi.
 - Not: `Flask` ile atılan fişek zaten herkese açık; `Magnet` kimseye bilgi vermez ama `fixed`'i değiştirir (çekip çevirir) — rakip zinciri okuyorsa öğrenebilir, aynı v1 sınırı.
 
-Yükleme sayısı üretimi (ayarlanabilir, Buckshot teyidine göre):
-`total = 2 + r % 7` (2–8); `live = clamp(total/2 + δ, 1, total−1)`, `δ ∈ {−1, 0, +1}` (r'den). R1'de `total ≤ 4` **[KARAR]**.
+Yükleme sayısı üretimi (`Config`'ten ayarlanabilir):
+R1'de sabit sıra `r1_loads` (`[(1, 2), (3, 2)]`, sonrası `total ≤ 4`), R2 ilk yükü `r2_first_load` (`Some((1, 1))`), diğer tüm yüklerde DoN formülü: `total = 2 + r % 7` (2–8), `live = max(1, total/2)` (her zaman `1 ≤ live ≤ blank`).
 
 Eşya dağıtımı: `items_per_load[round]` kadar, eşit ağırlıklı torbadan (round 2'de yalnızca orijinal beşli + `Ticker`, round 3'te tamamı **[KARAR]**), slot dolunca durur.
 

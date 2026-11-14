@@ -508,10 +508,11 @@ impl Contract {
                 shackled: None,
                 shackle_broke_this_turn: false,
                 saw_active: false,
+                round_load: 1,
             };
             let load = {
                 let mut src = ChainSource::new(m.seed, &mut m.draw_nonce);
-                new_load(1, &mut src)
+                new_load(1, 0, &m.config, &mut src)
             };
             m.game.load = load;
             m.status = Status::Active;
@@ -991,11 +992,10 @@ mod tests {
         assert_eq!(m.game.turn, m.seed[0] & 1);
         assert_eq!(m.game.items, [vec![], vec![]]);
         let load = &m.game.load;
-        assert!((2..=4).contains(&load.remaining), "R1 total {}", load.remaining);
-        assert!(load.announced_live >= 1 && load.announced_blank >= 1);
-        assert_eq!(load.announced_live + load.announced_blank, load.remaining);
+        assert_eq!((load.announced_live, load.announced_blank, load.remaining), (1, 2, 3));
         assert!(load.fixed.iter().all(|s| s.is_none()), "hiçbir konum çekilmemiş olmalı");
-        assert!(m.draw_nonce > 0);
+        assert_eq!(m.game.round_load, 1);
+        assert_ne!(m.seed, [0u8; 32]);
         assert_eq!(m.deadline_ms, now_ms() + 45_000);
         assert_eq!(m.seq, 1);
         assert_eq!(
@@ -1088,20 +1088,19 @@ mod tests {
 
         // Fişek sırası:
         // R1: Live (A->B), Blank (B->B), Blank (B->A), Live (A->B, R1 biter)
-        // R2 yük1 (total=4, live=2): Blank (B->A), Live (A Loupe + Hacksaw + A->B 2dmg),
-        //   Blank (B Pipe + B->A), Live (A->B, yük biter -> R2 yük2)
-        // R2 yük2 (total=2, live=1): Blank (B->A), Live (A Hacksaw + A->B 2dmg -> R2 biter!)
+        // R2 yük1 (preset 1+1): Blank (B->A), Live (A Loupe + Hacksaw + A->B 2dmg -> R2 yük2)
+        // R2 yük2 (total=4, live=2): Blank (B Pipe + B->A), Live (A->B), Blank (B->A), Live (A Hacksaw + A->B 2dmg -> R2 biter!)
         let shells = vec![
             Shell::Live, Shell::Blank, Shell::Blank, Shell::Live,
-            Shell::Blank, Shell::Live, Shell::Blank, Shell::Live,
             Shell::Blank, Shell::Live,
+            Shell::Blank, Shell::Live, Shell::Blank, Shell::Live,
         ];
         // Rolls:
-        // R2 yük1: new_load(2,1 -> total=4, live=2) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
-        // R2 yük2: new_load(0,1 -> total=2, live=1) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
+        // R2 yük1: preset (1,1) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
+        // R2 yük2: new_load(2 -> total=4, live=2) + deal_items(4,0, 1,2 -> A:[Hacksaw,Loupe], B:[Pipe,Flask])
         let rolls = vec![
-            2, 1, 4, 0, 1, 2,
-            0, 1, 4, 0, 1, 2,
+            4, 0, 1, 2,
+            2, 4, 0, 1, 2,
         ];
         let mut src = ScriptedSource::with_rolls(shells, rolls);
 
@@ -1115,7 +1114,7 @@ mod tests {
         let r1_end = c.fire_with(U64(7), Target::Opponent, &mut src);
         assert!(r1_end.iter().any(|a| matches!(a, Action::RoundEnded { winner: 0, score: [1, 0] })));
 
-        // R2: kaybeden (Bob) başlar, 4 HP ve eşyalarla.
+        // R2 yük1: kaybeden (Bob) başlar, 4 HP ve eşyalarla.
         switch_at("bob.testnet", NearToken::ZERO, 5_000);
         c.fire_with(U64(7), Target::Opponent, &mut src);
         assert_eq!(c.match_or_panic(7).deadline_ms, 5_000 + 45_000);
@@ -1133,14 +1132,15 @@ mod tests {
         );
         assert_eq!(c.match_or_panic(7).deadline_ms, 6_000 + 45_000);
         c.use_item_with(U64(7), 0, None, &mut src); // Hacksaw
-        c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar
+        c.fire_with(U64(7), Target::Opponent, &mut src); // 2 hasar -> R2 yük2 başlar
 
+        // R2 yük2
         switch_at("bob.testnet", NearToken::ZERO, 7_000);
         c.use_item_with(U64(7), 0, None, &mut src); // Pipe (+1 -> 3 HP)
         c.fire_with(U64(7), Target::Opponent, &mut src); // Blank
 
         switch_at("alice.testnet", NearToken::ZERO, 8_000);
-        c.fire_with(U64(7), Target::Opponent, &mut src); // Live -> 2 HP, R2 yük2 başlar
+        c.fire_with(U64(7), Target::Opponent, &mut src); // Live -> 2 HP
 
         switch_at("bob.testnet", NearToken::ZERO, 9_000);
         c.fire_with(U64(7), Target::Opponent, &mut src); // Blank

@@ -51,6 +51,10 @@ pub struct Config {
     pub max_items: u8,
     /// Yeni maç kabulü için gereken minimum treasury bakiyesi (DESIGN §4.7).
     pub min_treasury: NearToken,
+    /// R1 sabit yükleme sırası `(dolu, boş)` — Buckshot hikâye modu (G-03).
+    pub r1_loads: Vec<(u8, u8)>,
+    /// R2 ilk yüklemesi `(dolu, boş)` (opsiyonel; `Some((1, 1))`, G-03).
+    pub r2_first_load: Option<(u8, u8)>,
 }
 
 impl Default for Config {
@@ -71,6 +75,8 @@ impl Default for Config {
             tincture_good_pct: 50,
             max_items: 8,
             min_treasury: NearToken::from_millinear(100),
+            r1_loads: vec![(1, 2), (3, 2)],
+            r2_first_load: Some((1, 1)),
         }
     }
 }
@@ -119,6 +125,16 @@ impl Config {
         if self.reveal_ms < self.turn_ms {
             return Err("reveal_ms must be at least turn_ms");
         }
+        for &(live, blank) in &self.r1_loads {
+            if live < 1 || blank < 1 || live.saturating_add(blank) > 8 {
+                return Err("invalid preset load");
+            }
+        }
+        if let Some((live, blank)) = self.r2_first_load {
+            if live < 1 || blank < 1 || live.saturating_add(blank) > 8 {
+                return Err("invalid preset load");
+            }
+        }
         Ok(())
     }
 
@@ -162,6 +178,8 @@ mod tests {
         assert_eq!(c.tincture_good_pct, 50);
         assert_eq!(c.max_items, 8);
         assert_eq!(c.min_treasury, NearToken::from_millinear(100));
+        assert_eq!(c.r1_loads, vec![(1, 2), (3, 2)]);
+        assert_eq!(c.r2_first_load, Some((1, 1)));
     }
 
     #[test]
@@ -231,5 +249,13 @@ mod tests {
         let mut bad = Config::default();
         bad.reveal_ms = bad.turn_ms - 1;
         assert_eq!(bad.check(), Err("reveal_ms must be at least turn_ms"));
+
+        let mut bad = Config::default();
+        bad.r1_loads.push((0, 2));
+        assert_eq!(bad.check(), Err("invalid preset load"));
+
+        let mut bad = Config::default();
+        bad.r2_first_load = Some((5, 4));
+        assert_eq!(bad.check(), Err("invalid preset load"));
     }
 }
