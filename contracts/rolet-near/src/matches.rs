@@ -7,7 +7,9 @@
 //! function-call key ile çağrıda predecessor yine oyuncu hesabıdır, kural
 //! erişimi engellemez.
 
-use crate::game::{Action, GameState};
+use crate::events;
+use crate::game::{new_load, Action, GameState};
+use crate::rng::{commitment, ChainSource};
 use crate::{Contract, ContractExt};
 use near_contract_standards::non_fungible_token::TokenId;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
@@ -117,6 +119,18 @@ pub fn require_direct_call() {
 /// Millisaniye cinsinden blok zamanı (DESIGN §4.4: `env::block_timestamp_ms`).
 pub fn now_ms() -> u64 {
     env::block_timestamp_ms()
+}
+
+/// Aksiyonu maç kaydına yazar (seq + son `LOG_CAP` giriş) ve NEP-297 olayı
+/// loglar (T-114). T-112'de fire/use_item, burada reveal kullanır.
+pub fn push_action(m: &mut Match, action: Action) {
+    m.seq += 1;
+    if m.log.len() >= LOG_CAP {
+        let excess = m.log.len() + 1 - LOG_CAP;
+        m.log.drain(0..excess);
+    }
+    m.log.push(action.clone());
+    events::log_action(&action);
 }
 
 impl Contract {
@@ -239,6 +253,73 @@ impl Contract {
         require!(m.players[0] == player, "only the first participant can cancel");
         self.release(&m.players[0].clone(), m.id, &m.tokens[0].clone(), true);
         m.status = Status::Cancelled;
+        self.matches.insert(&m.id, &m);
+    }
+
+    /// Commit-reveal açılımı (DESIGN §4.4/§4.6, T-111): `sha256(secret ‖
+    /// account ‖ match_id) == commit` doğrulanır. İkinci reveal'da
+    /// `match_seed = sha256(secret_A ‖ secret_B ‖ random_seed ‖ match_id)`
+    /// sabitlenir; ilk sıra `seed[0] & 1`, R1 yüklemesi `ChainSource` ile
+    /// kurulur (eşyasız, total <= 4), maç `Active` olur, hamle süresi işler
+    /// ve `LoadStarted` aksiyonu loglanır.
+    pub fn reveal(&mut self, match_id: U64, secret: Base64VecU8) {
+        require_direct_call();
+        require!(secret.0.len() == 32, "secret must be 32 bytes");
+        let player = env::predecessor_account_id();
+        let mut m = self.match_or_panic(match_id.0);
+        require!(m.status == Status::Revealing, "match is not revealing");
+        let idx = if m.players[0] == player {
+            0
+        } else if m.players[1] == player {
+            1
+        } else {
+            panic!("not a participant")
+        };
+        require!(m.secrets[idx].is_none(), "already revealed");
+        let secret: [u8; 32] = secret.0.try_into().expect("uzunluk yukarıda doğrulandı");
+        require!(
+            commitment(secret, &player, m.id) == m.commits[idx],
+            "commit mismatch"
+        );
+        m.secrets[idx] = Some(secret);
+
+        if m.secrets.iter().all(|s| s.is_some()) {
+            // İkinci reveal: tohum, ilk sıra ve R1 yüklemesi (DESIGN §4.4).
+            let mut buf = Vec::with_capacity(32 * 2 + 32 + 8);
+            buf.extend_from_slice(&m.secrets[0].expect("yukarıda denetlendi"));
+            buf.extend_from_slice(&m.secrets[1].expect("yukarıda denetlendi"));
+            buf.extend_from_slice(&env::random_seed_array());
+            buf.extend_from_slice(&m.id.to_le_bytes());
+            m.seed = env::sha256_array(&buf);
+
+            let rc = self.config.rounds[0].clone();
+            m.game = GameState {
+                round: 1,
+                score: [0, 0],
+                hp: [rc.start_hp, rc.start_hp],
+                max_hp: rc.start_hp,
+                heal_cut: false,
+                items: [Vec::new(), Vec::new()],
+                load: crate::game::Load::new(0, 0),
+                turn: m.seed[0] & 1,
+                shackled: None,
+                shackle_broke_this_turn: false,
+                saw_active: false,
+            };
+            let load = {
+                let mut src = ChainSource::new(m.seed, &mut m.draw_nonce);
+                new_load(1, &mut src)
+            };
+            m.game.load = load;
+            m.status = Status::Active;
+            m.deadline_ms = now_ms() + self.config.turn_ms;
+            let action = Action::LoadStarted {
+                live: m.game.load.announced_live,
+                blank: m.game.load.announced_blank,
+                total: m.game.load.remaining,
+            };
+            push_action(&mut m, action);
+        }
         self.matches.insert(&m.id, &m);
     }
 }
@@ -505,5 +586,138 @@ mod tests {
         let mut c = setup();
         let alice = "alice.testnet".parse().unwrap();
         c.join(U64(7), alice, commitment_bytes(1), alice_token(&c));
+    }
+
+    // ------------------------------------------------------------------
+    // T-111: reveal ve maç başlangıcı
+    // ------------------------------------------------------------------
+
+    use crate::rng;
+
+    fn real_commit(tag: u8, account: &str, match_id: u64) -> Base64VecU8 {
+        Base64VecU8(
+            rng::commitment([tag; 32], &account.parse().unwrap(), match_id).to_vec(),
+        )
+    }
+
+    /// Gerçek taahhütlerle Revealing aşamasında maç kurar (alice:1, bob:2).
+    fn setup_revealing() -> Contract {
+        let mut c = setup();
+        let commit_a = real_commit(1, "alice.testnet", 7);
+        c.join(U64(7), "bob.testnet".parse().unwrap(), commit_a, alice_token(&c));
+        switch("bob.testnet", NearToken::ZERO);
+        let commit_b = real_commit(2, "bob.testnet", 7);
+        c.join(U64(7), "alice.testnet".parse().unwrap(), commit_b, bob_token(&c));
+        switch("alice.testnet", NearToken::ZERO);
+        c
+    }
+
+    fn secret_of(tag: u8) -> Base64VecU8 {
+        Base64VecU8([tag; 32].to_vec())
+    }
+
+    /// T-111: yanlış secret → commit uyuşmazlığı red.
+    #[test]
+    #[should_panic(expected = "commit mismatch")]
+    fn reveal_with_wrong_secret_rejected() {
+        let mut c = setup_revealing();
+        c.reveal(U64(7), secret_of(9));
+    }
+
+    /// T-111: tekrar reveal red.
+    #[test]
+    #[should_panic(expected = "already revealed")]
+    fn reveal_twice_rejected() {
+        let mut c = setup_revealing();
+        c.reveal(U64(7), secret_of(1));
+        c.reveal(U64(7), secret_of(1));
+    }
+
+    /// T-111: maça katılmayan reveal çağıramaz.
+    #[test]
+    #[should_panic(expected = "not a participant")]
+    fn reveal_by_non_participant_rejected() {
+        let mut c = setup_revealing();
+        switch("charlie.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(3));
+    }
+
+    /// T-111: 32 bayt olmayan secret reddedilir.
+    #[test]
+    #[should_panic(expected = "secret must be 32 bytes")]
+    fn reveal_rejects_bad_secret_length() {
+        let mut c = setup_revealing();
+        c.reveal(U64(7), Base64VecU8(vec![1u8; 31]));
+    }
+
+    /// T-111: Pending maçta reveal çağrılamaz.
+    #[test]
+    #[should_panic(expected = "match is not revealing")]
+    fn reveal_rejected_in_pending() {
+        let mut c = setup();
+        c.join(U64(7), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", 7), alice_token(&c));
+        c.reveal(U64(7), secret_of(1));
+    }
+
+    /// T-111: iki reveal → Active; hp = R1 canı, ilk sıra seed'den,
+    /// R1 yüklemesi sınırlarda, LoadStarted logda ve NEP-297 olayında, süre işler.
+    #[test]
+    fn both_reveals_activate_match() {
+        let mut c = setup_revealing();
+        c.reveal(U64(7), secret_of(1));
+        switch("bob.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(2));
+
+        let m = c.match_or_panic(7);
+        assert_eq!(m.status, Status::Active);
+        assert_eq!(m.game.hp, [2, 2]);
+        assert_eq!(m.game.max_hp, 2);
+        assert_eq!(m.game.round, 1);
+        assert_eq!(m.game.turn, m.seed[0] & 1);
+        assert_eq!(m.game.items, [vec![], vec![]]);
+        let load = &m.game.load;
+        assert!((2..=4).contains(&load.remaining), "R1 total {}", load.remaining);
+        assert!(load.announced_live >= 1 && load.announced_blank >= 1);
+        assert_eq!(load.announced_live + load.announced_blank, load.remaining);
+        assert!(load.fixed.iter().all(|s| s.is_none()), "hiçbir konum çekilmemiş olmalı");
+        assert!(m.draw_nonce > 0);
+        assert_eq!(m.deadline_ms, now_ms() + 45_000);
+        assert_eq!(m.seq, 1);
+        assert_eq!(
+            m.log,
+            vec![Action::LoadStarted {
+                live: load.announced_live,
+                blank: load.announced_blank,
+                total: load.remaining,
+            }]
+        );
+        let logs = near_sdk::test_utils::get_logs();
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].starts_with("EVENT_JSON:"));
+        assert!(logs[0].contains("\"event\":\"load_started\""));
+    }
+
+    /// T-111: ikinci oyuncu (Bob) önce reveal edebilir; simetrik çalışır.
+    #[test]
+    fn second_player_can_reveal_first() {
+        let mut c = setup_revealing();
+        switch("bob.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(2));
+        assert_eq!(c.match_or_panic(7).status, Status::Revealing);
+        switch("alice.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(1));
+        assert_eq!(c.match_or_panic(7).status, Status::Active);
+    }
+
+    /// T-111: tek reveal yalnızca sırrı açar; maç Revealing kalır.
+    #[test]
+    fn single_reveal_keeps_match_revealing() {
+        let mut c = setup_revealing();
+        c.reveal(U64(7), secret_of(1));
+        let m = c.match_or_panic(7);
+        assert_eq!(m.status, Status::Revealing);
+        assert_eq!(m.secrets[0], Some([1u8; 32]));
+        assert_eq!(m.seq, 0);
+        assert!(m.log.is_empty());
     }
 }
