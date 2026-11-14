@@ -4,9 +4,8 @@
 > `apps/web` bu tabloya uymak zorundadır. Paket sürümleri crates.io / npm registry API'lerinden,
 > araç sürümleri makinede 14 Kasım 2026'da ölçülerek alınmıştır.
 >
-> Not: `near --version` bu repoda uygulanan `Shell(near:*)` reddi kuralı nedeniyle ölçülemedi
-> (kural bilinçli: near CLI ile hesap/işlem yapılmayacak). near CLI'ın kurulu olduğuna DESIGN §1
-> tanımıyla inanılıyor; gerekirse elle ölçülüp bu satır güncellenir.
+> Not: `near --version` (`near-cli-rs 0.31.1`) yerelde ağ işlemi yapılmadan ölçülmüştür (FIX-F2-2).
+> Testnet işlemleri (deploy / T-119) Samet onayı beklemektedir; canlı CLI çağrısı yapılmamıştır.
 
 ## Rust gereksinimi
 
@@ -20,7 +19,7 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | rustc | **1.96.0** (ac68faa20 2026-05-25) | https://doc.rust-lang.org/ · https://github.com/rust-lang/rust/releases |
 | cargo | **1.96.0** (30a34c682 2026-05-25) | https://doc.rust-lang.org/cargo/ |
 | cargo-near (`cargo near`) | **0.23.0** (`cargo-near-near 0.23.0`) | https://github.com/near/cargo-near · https://crates.io/crates/cargo-near |
-| near CLI (near-cli-rs) | ölçülemedi (reddi kuralı; bkz. not) | https://near.cli.com/ · https://github.com/near/near-cli-rs |
+| near CLI (near-cli-rs) | **0.31.1** (`near-cli-rs 0.31.1`, FIX-F2-2 `near --version`) | https://near.cli.com/ · https://github.com/near/near-cli-rs |
 | Godot | **4.7.2.stable** (`4.7.2.stable.arch_linux.ed1daf0bf`) | https://docs.godotengine.org/en/stable/ |
 | Node.js | **v24.22.2** | https://nodejs.org/en/about/releases |
 | pnpm | **10.33.2** (kök `package.json` → `packageManager` ile uyumlu) | https://pnpm.io/ |

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rolet NEAR iki hesapla CLI tam maç duman testi (TASKS T-119).
 # DİKKAT: Gerçek testnet işlemi içerir; T-119 Samet onayı olmadan ÇALIŞTIRMAYIN.
-# Önce `--dry-run` ile akışı ve komutları gözden geçirin.
+# Önce `--dry-run` ile akışı ve komutları gözden geçirin. Yalnızca `testnet` ağına izin verir.
 #
 # Kullanım:
 #   ROLET_CONTRACT_ID=rolet.<hesap>.testnet \
@@ -15,7 +15,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     -h|--help)
-      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -25,52 +25,84 @@ for arg in "$@"; do
   esac
 done
 
-NEAR_NETWORK="${NEAR_NETWORK:-testnet}"
-CONTRACT_ID="${ROLET_CONTRACT_ID:-rolet.example.testnet}"
-PLAYER_A="${PLAYER_A:-alice.example.testnet}"
-PLAYER_B="${PLAYER_B:-bob.example.testnet}"
-MATCH_ID="${MATCH_ID:-$(date +%s)}"
-
+# S3: Gerçek çalıştırmada zorunlu ortam değişkenlerini varsayılan atamadan önce doğrula.
 if [[ "$DRY_RUN" -eq 0 ]]; then
   : "${ROLET_CONTRACT_ID:?ROLET_CONTRACT_ID ayarlı olmalı}"
   : "${PLAYER_A:?PLAYER_A ayarlı olmalı}"
   : "${PLAYER_B:?PLAYER_B ayarlı olmalı}"
 fi
 
-# 32-byte rastgele sırlar ve sha256(secret || account_id || match_id_le) taahhütleri.
-gen_commit_payload() {
-  local secret_hex="$1"
-  local account="$2"
-  local mid="$3"
-  python3 - "$secret_hex" "$account" "$mid" <<'PY'
-import base64, hashlib, struct, sys
-secret = bytes.fromhex(sys.argv[1])
-account = sys.argv[2].encode("utf-8")
-mid = struct.pack("<Q", int(sys.argv[3]))
+NEAR_NETWORK="${NEAR_NETWORK:-testnet}"
+CONTRACT_ID="${ROLET_CONTRACT_ID:-rolet.example.testnet}"
+PLAYER_A="${PLAYER_A:-alice.example.testnet}"
+PLAYER_B="${PLAYER_B:-bob.example.testnet}"
+MATCH_ID="${MATCH_ID:-$(date +%s)}"
+
+# S1: Mainnet koruması — ağ yalnızca 'testnet', hesap adları '.testnet' sonekli olmalı.
+if [[ "$NEAR_NETWORK" != "testnet" ]]; then
+  echo "HATA: NEAR_NETWORK yalnızca 'testnet' olabilir (gelen: '$NEAR_NETWORK')." >&2
+  exit 1
+fi
+validate_testnet_account() {
+  local label="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[a-z0-9._-]+\.testnet$ ]]; then
+    echo "HATA: $label geçerli bir .testnet hesabı olmalı (gelen: '$value')." >&2
+    exit 1
+  fi
+}
+validate_testnet_account "ROLET_CONTRACT_ID" "$CONTRACT_ID"
+validate_testnet_account "PLAYER_A" "$PLAYER_A"
+validate_testnet_account "PLAYER_B" "$PLAYER_B"
+
+if [[ ! "$MATCH_ID" =~ ^[0-9]+$ ]]; then
+  echo "HATA: MATCH_ID tam sayı olmalı (gelen: '$MATCH_ID')." >&2
+  exit 1
+fi
+
+# S4: Her çalıştırmada taze 32-byte rastgele sır (os.urandom) ve sha256(secret || account_id || match_id_le) taahhüdü üret.
+gen_random_commit_payload() {
+  local account="$1"
+  local mid="$2"
+  python3 - "$account" "$mid" <<'PY'
+import base64, hashlib, os, struct, sys
+secret = os.urandom(32)
+account = sys.argv[1].encode("utf-8")
+mid = struct.pack("<Q", int(sys.argv[2]))
 commit = hashlib.sha256(secret + account + mid).digest()
 print(base64.b64encode(secret).decode(), base64.b64encode(commit).decode())
 PY
 }
 
-SECRET_A_HEX="1111111111111111111111111111111111111111111111111111111111111111"
-SECRET_B_HEX="2222222222222222222222222222222222222222222222222222222222222222"
-read -r SECRET_A_B64 COMMIT_A_B64 <<< "$(gen_commit_payload "$SECRET_A_HEX" "$PLAYER_A" "$MATCH_ID")"
-read -r SECRET_B_B64 COMMIT_B_B64 <<< "$(gen_commit_payload "$SECRET_B_HEX" "$PLAYER_B" "$MATCH_ID")"
+read -r SECRET_A_B64 COMMIT_A_B64 <<< "$(gen_random_commit_payload "$PLAYER_A" "$MATCH_ID")"
+read -r SECRET_B_B64 COMMIT_B_B64 <<< "$(gen_random_commit_payload "$PLAYER_B" "$MATCH_ID")"
 
+# S2: eval yerine doğrudan argüman dizisi ile çalıştır/yazdır.
 run_or_print() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '[dry-run] %s\n' "$*"
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
   else
-    echo "+ $*"
-    eval "$@"
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+    "$@"
   fi
 }
 
-echo "=== Rolet CLI Tam Maç Duman Testi (match_id=$MATCH_ID, A=$PLAYER_A, B=$PLAYER_B) ==="
+echo "=== Rolet CLI Tam Maç Duman Testi (network=$NEAR_NETWORK match_id=$MATCH_ID A=$PLAYER_A B=$PLAYER_B) ==="
 
-# 1. İki oyuncu karakter satın alır (mevcut token yoksa).
-run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" buy_character json-args '{\"kind\":\"Kuleci\"}' prepaid-gas '30.0 Tgas' attached-deposit '1 NEAR' sign-as \"$PLAYER_A\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
-run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" buy_character json-args '{\"kind\":\"Ayarci\"}' prepaid-gas '30.0 Tgas' attached-deposit '1 NEAR' sign-as \"$PLAYER_B\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
+# 1. İki oyuncu karakter satın alır.
+run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+  buy_character json-args '{"kind":"Kuleci"}' \
+  prepaid-gas '30.0 Tgas' attached-deposit '1 NEAR' \
+  sign-as "$PLAYER_A" network-config "$NEAR_NETWORK" sign-with-keychain send
+
+run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+  buy_character json-args '{"kind":"Ayarci"}' \
+  prepaid-gas '30.0 Tgas' attached-deposit '1 NEAR' \
+  sign-as "$PLAYER_B" network-config "$NEAR_NETWORK" sign-with-keychain send
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   TOKEN_A="kuleci:1"
@@ -81,17 +113,42 @@ else
 fi
 
 # 2. join x2
-run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" join json-args '{\"match_id\":\"$MATCH_ID\",\"opponent\":\"$PLAYER_B\",\"commit\":\"$COMMIT_A_B64\",\"token_id\":\"$TOKEN_A\"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as \"$PLAYER_A\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
-run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" join json-args '{\"match_id\":\"$MATCH_ID\",\"opponent\":\"$PLAYER_A\",\"commit\":\"$COMMIT_B_B64\",\"token_id\":\"$TOKEN_B\"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as \"$PLAYER_B\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
+JOIN_A_ARGS="$(python3 -c 'import json,sys; print(json.dumps({"match_id":sys.argv[1],"opponent":sys.argv[2],"commit":sys.argv[3],"token_id":sys.argv[4]}, separators=(",",":")))' "$MATCH_ID" "$PLAYER_B" "$COMMIT_A_B64" "$TOKEN_A")"
+JOIN_B_ARGS="$(python3 -c 'import json,sys; print(json.dumps({"match_id":sys.argv[1],"opponent":sys.argv[2],"commit":sys.argv[3],"token_id":sys.argv[4]}, separators=(",",":")))' "$MATCH_ID" "$PLAYER_A" "$COMMIT_B_B64" "$TOKEN_B")"
+
+run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+  join json-args "$JOIN_A_ARGS" \
+  prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as "$PLAYER_A" network-config "$NEAR_NETWORK" sign-with-keychain send
+
+run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+  join json-args "$JOIN_B_ARGS" \
+  prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as "$PLAYER_B" network-config "$NEAR_NETWORK" sign-with-keychain send
 
 # 3. reveal x2
-run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" reveal json-args '{\"match_id\":\"$MATCH_ID\",\"secret\":\"$SECRET_A_B64\"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as \"$PLAYER_A\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
-run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" reveal json-args '{\"match_id\":\"$MATCH_ID\",\"secret\":\"$SECRET_B_B64\"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as \"$PLAYER_B\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
+REVEAL_A_ARGS="$(python3 -c 'import json,sys; print(json.dumps({"match_id":sys.argv[1],"secret":sys.argv[2]}, separators=(",",":")))' "$MATCH_ID" "$SECRET_A_B64")"
+REVEAL_B_ARGS="$(python3 -c 'import json,sys; print(json.dumps({"match_id":sys.argv[1],"secret":sys.argv[2]}, separators=(",",":")))' "$MATCH_ID" "$SECRET_B_B64")"
+
+run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+  reveal json-args "$REVEAL_A_ARGS" \
+  prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as "$PLAYER_A" network-config "$NEAR_NETWORK" sign-with-keychain send
+
+run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+  reveal json-args "$REVEAL_B_ARGS" \
+  prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as "$PLAYER_B" network-config "$NEAR_NETWORK" sign-with-keychain send
 
 # 4. Maç bitene kadar get_match -> sıradaki oyuncu fire(Opponent)
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  run_or_print "near contract call-function as-read-only \"$CONTRACT_ID\" get_match json-args '{\"match_id\":\"$MATCH_ID\"}' network-config \"$NEAR_NETWORK\" now"
-  run_or_print "near contract call-function as-transaction \"$CONTRACT_ID\" fire json-args '{\"match_id\":\"$MATCH_ID\",\"target\":\"Opponent\"}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as \"<turn_player>\" network-config \"$NEAR_NETWORK\" sign-with-keychain send"
+  run_or_print near contract call-function as-read-only "$CONTRACT_ID" \
+    get_match json-args "{\"match_id\":\"$MATCH_ID\"}" \
+    network-config "$NEAR_NETWORK" now
+  run_or_print near contract call-function as-transaction "$CONTRACT_ID" \
+    fire json-args "{\"match_id\":\"$MATCH_ID\",\"target\":\"Opponent\"}" \
+    prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
+    sign-as "<turn_player>.testnet" network-config "$NEAR_NETWORK" sign-with-keychain send
   exit 0
 fi
 

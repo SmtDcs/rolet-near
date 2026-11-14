@@ -35,7 +35,7 @@ Betik sırasıyla:
 1. `cargo near build non-reproducible-wasm` ile WASM derler,
 2. `rolet_near.wasm` dosyasını `new(owner, config)` (`Config::default()`, VALUES değerleri) ile deploy eder,
 3. `fund_treasury` ile başlangıç ödül havuzunu (varsayılan `2 NEAR`) yükler,
-4. `get_config` view çıktısını doğrular ve `apps/web/.env.example` içine `NEXT_PUBLIC_ROLET_CONTRACT` adresini yazar.
+4. `get_config` view çıktısını doğrular ve `apps/web/.env.local` içine `NEXT_PUBLIC_ROLET_CONTRACT` adresini yazar (takipli `.env.example` değiştirilmez). Betikler yalnızca `NEAR_NETWORK=testnet` ve `.testnet` sonekli hesapları kabul eder (`eval` kullanılmaz).
 
 Beklenen kabul çıktısı: `near contract call-function as-read-only <ROLET_CONTRACT_ID> get_config ...` yanıtında `tincture_good_pct: 50`, `max_items: 4`, `load_size: 8`, `min_live: 2`, `max_live: 6`.
 
