@@ -1712,7 +1712,7 @@ mod tests {
         );
         assert_eq!(st2.hp, [4, 3]);
         // Kötü yol: -1 can, R3 eşiğine (2) düşünce HealCut.
-        let mut src3 = ScriptedSource::with_rolls(vec![], vec![40]);
+        let mut src3 = ScriptedSource::with_rolls(vec![], vec![60]);
         let mut st3 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
         st3.hp = [3, 3];
         let actions3 = use_at(&mut st3, 0, &mut src3).unwrap();
@@ -1736,6 +1736,31 @@ mod tests {
         st4.heal_cut = [true, false];
         assert_eq!(use_at(&mut st4, 0, &mut src4), Err(GameError::HealBlocked));
         assert_eq!(st4.items[0], vec![Item::Tincture]);
+        // Sınır kontrolü (varsayılan 50): roll 49 iyi (+2), roll 50 kötü (-1).
+        let mut src_good = ScriptedSource::with_rolls(vec![], vec![49]);
+        let mut st_good = item_state(1, Load::new(1, 1), vec![Item::Tincture]);
+        st_good.hp = [2, 4];
+        assert_eq!(
+            use_at(&mut st_good, 0, &mut src_good).unwrap()[0],
+            Action::ItemUsed {
+                player: 0,
+                item: Item::Tincture,
+                slot: 0,
+                result: ItemResult::Healed { amount: 2 },
+            }
+        );
+        let mut src_bad = ScriptedSource::with_rolls(vec![], vec![50]);
+        let mut st_bad = item_state(1, Load::new(1, 1), vec![Item::Tincture]);
+        st_bad.hp = [3, 4];
+        assert_eq!(
+            use_at(&mut st_bad, 0, &mut src_bad).unwrap()[0],
+            Action::ItemUsed {
+                player: 0,
+                item: Item::Tincture,
+                slot: 0,
+                result: ItemResult::Damaged { amount: 1 },
+            }
+        );
     }
 
     /// T-106: Tincture kötü yolu öldürebilir (§2.4) → round biter,

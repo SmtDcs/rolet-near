@@ -88,7 +88,7 @@ Sonradan eklenenler ("Double or Nothing" güncellemesi):
 | Kullan-at telefon | Gelecekteki rastgele bir fişeğin sırasını ve türünü kullanana söyler ("3. fişek… dolu"). Tek fişek kaldıysa bilgi vermez. **[EMİN DEĞİLİM: mevcut fişeği hariç tutuyor mu — muhtemelen evet]** |
 | İnverter | **Mevcut fişeğin** kutbunu çevirir (dolu↔boş). Açıklanan sayılar güncellenmez. |
 | Adrenalin | Rakibin bir eşyasını çalar ve **hemen kullanır**. Adrenalin çalınamaz. Seçim için süre sınırı var. **[EMİN DEĞİLİM: süre]** |
-| Son kullanma tarihi geçmiş ilaç | Şans: %40 ihtimalle +2 can, aksi halde −1 can (öldürebilir) (`Config.tincture_good_pct`, varsayılan 40). |
+| Son kullanma tarihi geçmiş ilaç | Şans: %50 ihtimalle +2 can, aksi halde −1 can (öldürebilir) (`Config.tincture_good_pct`, varsayılan 50). |
 
 ### 2.5 Round'a özel kurallar
 - **Round 1:** eşya yok, düşük can, saf şans + boşla-kendine-ateş kararı.

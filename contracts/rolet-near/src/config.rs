@@ -48,7 +48,7 @@ pub struct Config {
     pub durability: u8,
     /// Önerilen function-call allowance — DESIGN §4.9: 0.5 NEAR.
     pub allowance_hint: NearToken,
-    /// Tincture iyi yolu olasılığı (yüzde) — Rolet varsayılanı: %40.
+    /// Tincture iyi yolu olasılığı (yüzde) — Buckshot 1.2.1+ mekaniği: %50.
     pub tincture_good_pct: u32,
     /// Oyuncu başına eşya slotu — Rolet eli: 4.
     pub max_items: u8,
@@ -114,7 +114,7 @@ impl Default for Config {
             ops_bps: 500,
             durability: 10,
             allowance_hint: NearToken::from_millinear(500),
-            tincture_good_pct: 40,
+            tincture_good_pct: 50,
             max_items: 4,
             min_treasury: NearToken::from_millinear(100),
             load_size: 8,
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(c.ops_bps, 500);
         assert_eq!(c.durability, 10);
         assert_eq!(c.allowance_hint, NearToken::from_millinear(500));
-        assert_eq!(c.tincture_good_pct, 40);
+        assert_eq!(c.tincture_good_pct, 50);
         assert_eq!(c.max_items, 4);
         assert_eq!(c.min_treasury, NearToken::from_millinear(100));
         assert_eq!(c.load_size, 8);
