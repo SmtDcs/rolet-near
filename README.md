@@ -179,7 +179,7 @@ pnpm --filter web dev
 # open http://localhost:3000/duel in two browsers (two testnet accounts)
 ```
 
-The app defaults to `NEXT_PUBLIC_NEAR_NETWORK=testnet` and `NEXT_PUBLIC_ROLET_CONTRACT=rolet.rolet-hk-o2611150055.testnet` (see `apps/web/.env.example`). Sign in with MyNearWallet or Meteor on testnet, buy a character (1 testnet NEAR), approve the game key once, then press Find match in both browsers. Testnet only, no real money.
+The app defaults to `NEXT_PUBLIC_NEAR_NETWORK=testnet` and `NEXT_PUBLIC_ROLET_CONTRACT=rolet.rolet-hk-o2611150055.testnet` (see `apps/web/.env.example`). Sign in with MyNearWallet or Meteor on testnet, buy a character (1 testnet NEAR), approve the game key once, then join the match queue in both browsers. Testnet only, no real money.
 
 ## Game values (`contracts/rolet-near/init-config.json`)
 
