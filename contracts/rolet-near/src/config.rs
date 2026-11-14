@@ -60,6 +60,8 @@ pub struct Config {
     pub min_live: u8,
     /// Her yüklemedeki maksimum dolu fişek sayısı (`ChainSource` aralığı üst sınırı, vars. 6).
     pub max_live: u8,
+    /// Maç başındaki ortak eşya destesinde her türden kaç kopya bulunduğu (9 × 4 = 36).
+    pub copies_per_item: u8,
 }
 
 impl Default for Config {
@@ -120,6 +122,7 @@ impl Default for Config {
             load_size: 8,
             min_live: 2,
             max_live: 6,
+            copies_per_item: 4,
         }
     }
 }
@@ -182,6 +185,9 @@ impl Config {
         }
         if self.min_live > self.max_live {
             return Err("min_live cannot exceed max_live");
+        }
+        if self.copies_per_item < 1 {
+            return Err("copies_per_item must be at least 1");
         }
         Ok(())
     }
@@ -266,6 +272,7 @@ mod tests {
         assert_eq!(c.load_size, 8);
         assert_eq!(c.min_live, 2);
         assert_eq!(c.max_live, 6);
+        assert_eq!(c.copies_per_item, 4);
     }
 
     #[test]
@@ -369,5 +376,9 @@ mod tests {
         let mut bad = Config::default();
         bad.rounds[1].item_bag.clear();
         assert_eq!(bad.check(), Err("item_bag cannot be empty when items_per_load > 0"));
+
+        let mut bad = Config::default();
+        bad.copies_per_item = 0;
+        assert_eq!(bad.check(), Err("copies_per_item must be at least 1"));
     }
 }

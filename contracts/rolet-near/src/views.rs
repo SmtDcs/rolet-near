@@ -31,6 +31,8 @@ pub struct MatchView {
     /// Her oyuncunun `reveal` yapıp yapmadığı (sırrın kendisi gizlidir).
     pub revealed: [bool; 2],
     pub game: GameState,
+    /// Ortak eşya destesinde kalan kart sayısı (EK2).
+    pub deck_remaining: u16,
     pub reveal_deadline_ms: u64,
     pub deadline_ms: u64,
     pub winner: Option<u8>,
@@ -40,6 +42,7 @@ pub struct MatchView {
 
 impl From<Match> for MatchView {
     fn from(m: Match) -> Self {
+        let deck_remaining = m.game.deck_remaining();
         Self {
             id: U64(m.id),
             status: m.status,
@@ -47,6 +50,7 @@ impl From<Match> for MatchView {
             tokens: m.tokens,
             revealed: [m.secrets[0].is_some(), m.secrets[1].is_some()],
             game: m.game,
+            deck_remaining,
             reveal_deadline_ms: m.reveal_deadline_ms,
             deadline_ms: m.deadline_ms,
             winner: m.winner,
@@ -183,6 +187,11 @@ impl Contract {
         self.treasury
     }
 
+    /// Ortak eşya destesinde kalan toplam kart sayısı (EK2).
+    pub fn get_deck_remaining(&self, match_id: U64, players: Option<[AccountId; 2]>) -> Option<u16> {
+        self.lookup_match(match_id.0, players).map(|m| m.game.deck_remaining())
+    }
+
     /// Galibiyete göre azalan sıralı top-100 oyuncu listesi (sayfalı; O(1) okuma, S-09).
     pub fn leaderboard(&self, from: Option<u64>, limit: Option<u64>) -> Vec<LeaderboardEntry> {
         let skip = from.unwrap_or(0) as usize;
@@ -299,6 +308,9 @@ mod tests {
         c.reveal(U64(7), Base64VecU8([1u8; 32].to_vec()));
 
         // R1 başlangıcı: seq = 3 (LoadStarted + 2× ItemsDealt), boşluk yok (first_seq = 1).
+        // Ortak 36 kartlık desteden R1'de 4+4 = 8 kart çekildi → 28 kart kaldı (EK2).
+        assert_eq!(c.get_deck_remaining(U64(7), None), Some(28));
+        assert_eq!(c.get_match(U64(7), None).unwrap().deck_remaining, 28);
         let init_page = c.get_actions(U64(7), 0, None);
         assert_eq!(init_page.first_seq, 1);
         assert_eq!(init_page.actions.len(), 3);

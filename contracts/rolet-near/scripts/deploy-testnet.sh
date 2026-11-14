@@ -61,6 +61,7 @@ INIT_CONFIG_JSON=$(cat <<'JSON'
   "load_size": 8,
   "min_live": 2,
   "max_live": 6,
+  "copies_per_item": 4,
   "rounds": [
     {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null, "item_bag": ["Loupe", "Pipe", "Flask", "Shackle", "Hacksaw"]},
     {"start_hp": 4, "items_per_load": 4, "heal_cut_at": null, "item_bag": ["Loupe", "Pipe", "Flask", "Shackle", "Hacksaw", "Ticker", "Magnet", "Tincture", "Lockpick"]},

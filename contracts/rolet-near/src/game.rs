@@ -49,6 +49,24 @@ pub enum Item {
     Tincture,
 }
 
+/// Ortak eşya destesinde bulunan 9 eşya türü (EK2: `deck_counts` indeks sırası).
+pub const ALL_ITEMS: [Item; 9] = [
+    Item::Loupe,
+    Item::Pipe,
+    Item::Flask,
+    Item::Shackle,
+    Item::Hacksaw,
+    Item::Ticker,
+    Item::Magnet,
+    Item::Lockpick,
+    Item::Tincture,
+];
+
+/// Maç başında `copies_per_item` × 9 kartlık ortak deste oluşturur.
+pub fn new_deck(copies_per_item: u8) -> [u8; 9] {
+    [copies_per_item; 9]
+}
+
 /// Ateş hedefi.
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug,
@@ -133,6 +151,15 @@ pub struct GameState {
     pub shackle_broke_this_turn: bool,
     /// Testere aktif: bir sonraki atış 2 hasar verir.
     pub saw_active: bool,
+    /// Ortak eşya destesinde her türden kalan kart sayısı (`ALL_ITEMS` sırasıyla).
+    pub deck_counts: [u8; 9],
+}
+
+impl GameState {
+    /// Ortak eşya destesinde kalan toplam kart sayısı.
+    pub fn deck_remaining(&self) -> u16 {
+        self.deck_counts.iter().map(|&c| c as u16).sum()
+    }
 }
 
 /// Maçın `Revealing` aşamasındaki (oyunun kurulmadan önceki) yer tutucusu.
@@ -151,6 +178,7 @@ impl Default for GameState {
             shackled: None,
             shackle_broke_this_turn: false,
             saw_active: false,
+            deck_counts: [0; 9],
         }
     }
 }
@@ -375,8 +403,10 @@ pub fn item_bag<'a>(cfg: &'a Config, round: u8) -> &'a [Item] {
         .unwrap_or(&[])
 }
 
-/// Her yüklemede iki tarafa da round tablosundaki sayıda eşya dağıtır
-/// (DESIGN §2.2.4/§4.6). Slot doluysa fazlası düşer; R1 dahil her round 4 eşya.
+/// Ortak eşya destesinden (9 tür × `cfg.copies_per_item`) iadesiz olarak her
+/// tarafa `items_per_load` kart dağıtır (R1 dahil her round 4 eşya). Tür seçimi
+/// dağıtım anında `ChainSource::roll` ile kalan kart sayılarına göre ağırlıklı
+/// yapılır; deste bittiğinde `cfg.copies_per_item` ile yeniden doldurulur (EK2).
 pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource) -> Vec<Action> {
     let round = state.round;
     let per_player = cfg
@@ -384,9 +414,8 @@ pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource
         .get(round.saturating_sub(1) as usize)
         .map(|r| r.items_per_load as usize)
         .unwrap_or(0);
-    let bag = item_bag(cfg, round);
     let mut actions = Vec::new();
-    if per_player == 0 || bag.is_empty() {
+    if per_player == 0 || cfg.copies_per_item == 0 {
         return actions;
     }
     for player in 0..2usize {
@@ -394,9 +423,24 @@ pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource
         let count = per_player.min(free);
         let mut dealt = Vec::with_capacity(count);
         for _ in 0..count {
-            let item = bag[src.roll(bag.len() as u32) as usize];
-            state.items[player].push(item);
-            dealt.push(item);
+            let mut total: u32 = state.deck_counts.iter().map(|&c| c as u32).sum();
+            if total == 0 {
+                state.deck_counts = new_deck(cfg.copies_per_item);
+                total = (ALL_ITEMS.len() as u32) * (cfg.copies_per_item as u32);
+            }
+            let mut pick = src.roll(total);
+            let mut drawn = ALL_ITEMS[0];
+            for (idx, count_slot) in state.deck_counts.iter_mut().enumerate() {
+                let c = *count_slot as u32;
+                if pick < c {
+                    *count_slot -= 1;
+                    drawn = ALL_ITEMS[idx];
+                    break;
+                }
+                pick -= c;
+            }
+            state.items[player].push(drawn);
+            dealt.push(drawn);
         }
         if !dealt.is_empty() {
             actions.push(Action::ItemsDealt { player: player as u8, items: dealt });
@@ -774,6 +818,7 @@ mod tests {
             shackled: Some(0),
             shackle_broke_this_turn: false,
             saw_active: true,
+            deck_counts: [4; 9],
         }
     }
 
@@ -828,6 +873,7 @@ mod tests {
             shackled: None,
             shackle_broke_this_turn: false,
             saw_active: false,
+            deck_counts: new_deck(cfg.copies_per_item),
         }
     }
 
@@ -893,12 +939,12 @@ mod tests {
                 let mut state = state_for_round(round, new_load(&cfg, &mut src), &cfg);
                 let actions = deal_items(&mut state, &cfg, &mut src);
                 let expected = cfg.rounds[(round - 1) as usize].items_per_load as usize;
-                let bag = item_bag(&cfg, round);
                 for player in 0..2usize {
                     assert_eq!(state.items[player].len(), expected);
-                    assert!(state.items[player].iter().all(|i| bag.contains(i)));
+                    assert!(state.items[player].iter().all(|i| ALL_ITEMS.contains(i)));
                     assert!(state.items[player].len() <= cfg.max_items as usize);
                 }
+                assert_eq!(state.deck_remaining(), 36 - (expected as u16) * 2);
                 if expected == 0 {
                     assert!(actions.is_empty(), "R1'de eşya aksiyonu olmamalı");
                 } else {
@@ -927,7 +973,8 @@ mod tests {
             Action::ItemsDealt { player, items } => {
                 assert_eq!(*player, 1);
                 assert_eq!(items.len(), 1);
-                assert!(item_bag(&cfg, 2).contains(&items[0]));
+                assert!(ALL_ITEMS.contains(&items[0]));
+                assert_eq!(state.deck_remaining(), 35);
             }
             other => panic!("beklenmedik aksiyon: {other:?}"),
         }
@@ -1170,9 +1217,10 @@ mod tests {
                 Action::Ejected { shell: Shell::Live },
                 Action::LoadStarted { live: 2, blank: 6, total: 8 },
                 Action::ItemsDealt { player: 0, items: vec![Item::Loupe; 4] },
-                Action::ItemsDealt { player: 1, items: vec![Item::Loupe; 4] },
+                Action::ItemsDealt { player: 1, items: vec![Item::Pipe; 4] },
             ]
         );
+        assert_eq!(st.deck_remaining(), 28);
         assert_eq!(st.load.remaining, 8);
         assert_eq!(st.turn, 1); // ikinci atış dolu → sıra geçti
         assert_eq!(st.hp, [3, 4]);
@@ -1675,7 +1723,8 @@ mod tests {
         assert_eq!(actions[3], Action::LoadStarted { live: 2, blank: 6, total: 8 });
         assert_eq!(st.load.remaining, 8);
         assert_eq!(st.items[0], vec![Item::Loupe; 4]);
-        assert_eq!(st.items[1], vec![Item::Loupe; 4]);
+        assert_eq!(st.items[1], vec![Item::Pipe; 4]);
+        assert_eq!(st.deck_remaining(), 28);
     }
 
     /// T-106: Tincture — `tincture_good_pct` altında +2 can (max'a kelepçeli),
@@ -1859,5 +1908,89 @@ mod tests {
         let a2 = fire(&mut st, &cfg, 0, Target::Opponent, &mut src).unwrap();
         assert!(a2.contains(&Action::HealCut { player: 1 }));
         assert_eq!(st.heal_cut, [true, true]);
+    }
+
+    /// EK2: Ortak deste başlangıçta 9×4 = 36 kart içerir, iadesiz dağıtılır,
+    /// bitince `copies_per_item` ile yeniden doldurulur ve `deck_remaining()` bunu yansıtır.
+    #[test]
+    fn shared_deck_deals_without_replacement_and_refills() {
+        let cfg = Config::default();
+        let mut src = XorshiftRng::new(98765);
+        let mut st = state_for_round(1, Load::new(4, 4), &cfg);
+        assert_eq!(st.deck_remaining(), 36);
+        assert_eq!(st.deck_counts, [4; 9]);
+
+        let mut counts = [0u8; 9];
+        // 4 tam çift el dağıtımı (4 × 8 = 32) + 1 tek el (4) = tam 36 kart (iadesiz).
+        for round_step in 0..4 {
+            let dealt_actions = deal_items(&mut st, &cfg, &mut src);
+            assert_eq!(dealt_actions.len(), 2);
+            for p in 0..2 {
+                assert_eq!(st.items[p].len(), 4);
+                for it in st.items[p].drain(..) {
+                    let idx = ALL_ITEMS.iter().position(|&x| x == it).unwrap();
+                    counts[idx] += 1;
+                }
+            }
+            assert_eq!(st.deck_remaining(), 36 - ((round_step + 1) * 8) as u16);
+        }
+        // Şu an destede 4 kart kaldı; sadece player 0'ın elini boşaltıp 4 kart çekelim,
+        // player 1'in eli dolu olsun ki tam 36. kartta deste 0'a insin.
+        st.items[1] = vec![Item::Pipe; 4];
+        let last_4 = deal_items(&mut st, &cfg, &mut src);
+        assert_eq!(last_4.len(), 1);
+        for it in st.items[0].drain(..) {
+            let idx = ALL_ITEMS.iter().position(|&x| x == it).unwrap();
+            counts[idx] += 1;
+        }
+        assert_eq!(counts, [4; 9], "36 çekimde her 9 tür tam olarak 4 kez gelmeli");
+        assert_eq!(st.deck_remaining(), 0);
+        assert_eq!(st.deck_counts, [0; 9]);
+
+        // Deste bitti → bir sonraki dağıtımda otomatik [4; 9] (36) olarak yenilenir ve 8 kart dağıtır.
+        st.items = [Vec::new(), Vec::new()];
+        let refilled = deal_items(&mut st, &cfg, &mut src);
+        assert_eq!(refilled.len(), 2);
+        assert_eq!(st.items[0].len(), 4);
+        assert_eq!(st.items[1].len(), 4);
+        assert_eq!(st.deck_remaining(), 28);
+    }
+
+    /// EK2: `Config.copies_per_item` deste boyutunu ve yenileme miktarını belirler.
+    #[test]
+    fn shared_deck_respects_custom_copies_per_item() {
+        let mut cfg = Config::default();
+        cfg.copies_per_item = 2; // 9 × 2 = 18 kart
+        let mut src = XorshiftRng::new(13579);
+        let mut st = state_for_round(1, Load::new(4, 4), &cfg);
+        assert_eq!(st.deck_remaining(), 18);
+
+        let mut counts = [0u8; 9];
+        // İlk 16 kart (2× 8 kart) + sonraki turun ilk oyuncusunun 2 kartı = 18 kart (tam boşalma),
+        // ardından aynı dağıtım içinde deste yenilenir ve 2+4 = 6 kart yeni desteden gelir.
+        for _ in 0..2 {
+            deal_items(&mut st, &cfg, &mut src);
+            for p in 0..2 {
+                for it in st.items[p].drain(..) {
+                    let idx = ALL_ITEMS.iter().position(|&x| x == it).unwrap();
+                    counts[idx] += 1;
+                }
+            }
+        }
+        assert_eq!(st.deck_remaining(), 2);
+        // Kalan son 2 kartı ve sonraki yenilemeden 6 kartı çek:
+        st.items = [Vec::new(), Vec::new()];
+        deal_items(&mut st, &cfg, &mut src);
+        assert_eq!(st.items[0].len(), 4);
+        assert_eq!(st.items[1].len(), 4);
+        // İlk 18 karttan her biri tam 2 kez çıkmış olmalı:
+        // player 0'ın ilk 2 kartı önceki 16 kartı 18'e tamamlar.
+        for it in &st.items[0][..2] {
+            let idx = ALL_ITEMS.iter().position(|&x| x == *it).unwrap();
+            counts[idx] += 1;
+        }
+        assert_eq!(counts, [2; 9], "18 çekimde her 9 tür tam 2 kez gelmeli");
+        // Yeni desteden 2 (p0 sonu) + 4 (p1) = 6 kart eksildi → 18 - 6 = 12 kalmalı.
+        assert_eq!(st.deck_remaining(), 12);
     }
 }

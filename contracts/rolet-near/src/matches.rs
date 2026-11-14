@@ -514,6 +514,7 @@ impl Contract {
                 shackled: None,
                 shackle_broke_this_turn: false,
                 saw_active: false,
+                deck_counts: crate::game::new_deck(m.config.copies_per_item),
             };
             let dealt_actions = {
                 let mut src = ChainSource::new(m.seed, &mut m.draw_nonce);
@@ -1112,11 +1113,12 @@ mod tests {
     fn full_scripted_match_pays_winner_and_unlocks() {
         let mut c = setup_active();
         let treasury_before = c.treasury;
-        // R1 yükünü, canı ve ilk sırayı senaryoya göre sabitle (deterministik).
+        // R1 yükünü, canı, desteyi ve ilk sırayı senaryoya göre sabitle (deterministik).
         let mut m = c.match_or_panic(7);
         m.game.hp = [2, 2];
         m.game.load = Load::new(2, 2);
         m.game.turn = 0;
+        m.game.deck_counts = [4; 9];
         c.save_match(&m);
         let storage_before = env::storage_usage();
 
@@ -1129,12 +1131,12 @@ mod tests {
             Shell::Live, Shell::Blank, Shell::Blank, Shell::Live,
             Shell::Blank, Shell::Live, Shell::Blank, Shell::Live, Shell::Blank, Shell::Live,
         ];
-        // Rolls:
+        // Rolls (ortak [4; 9] deste iadesiz çekim sırası):
         // R2 yük1: new_load(roll=1 -> 3 live, 5 blank) + deal_items(
-        //   A: [4:Hacksaw, 0:Loupe, 4:Hacksaw, 1:Pipe],
-        //   B: [1:Pipe, 2:Flask, 0:Loupe, 3:Shackle])
+        //   A: [Hacksaw(16), Loupe(0), Hacksaw(15), Pipe(3)],
+        //   B: [Pipe(3), Flask(5), Loupe(0), Shackle(7)])
         let rolls = vec![
-            1, 4, 0, 4, 1, 1, 2, 0, 3,
+            1, 16, 0, 15, 3, 3, 5, 0, 7,
         ];
         let mut src = ScriptedSource::with_rolls(shells, rolls);
 
