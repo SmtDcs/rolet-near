@@ -434,6 +434,9 @@ pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource
 /// `state.load`'a yeni yükleme kurar ve `LoadStarted` + (R2/R3'te) eşya
 /// dağıtım aksiyonlarını üretir — `fire` ve `Flask`/`Tincture` ortak yolu.
 fn reload(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource, actions: &mut Vec<Action>) {
+    // Yeni yükte kelepçe ve zincir kilidi temizlenir (FIX-11 / G-05).
+    state.shackled = None;
+    state.shackle_broke_this_turn = false;
     state.load = new_load(state.round, state.round_load, cfg, src);
     state.round_load = state.round_load.saturating_add(1);
     actions.push(Action::LoadStarted {
@@ -1164,6 +1167,24 @@ mod tests {
         fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
         assert_eq!(st.turn, 1);
         assert!(!st.shackle_broke_this_turn);
+    }
+
+    /// FIX-11 (G-05): Son fişekte boşla kendine ateşten sonra yeni yükte kelepçe kalkar.
+    #[test]
+    fn reload_clears_shackles_after_blank_self_shot_on_last_shell() {
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank], vec![0; 8]);
+        let mut st = fire_state(2, Load::new(0, 1));
+        st.shackled = Some(1);
+        st.shackle_broke_this_turn = true;
+        fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        assert_eq!(st.shackled, None);
+        assert!(!st.shackle_broke_this_turn);
+        assert_eq!(st.turn, 0);
+        // Yeni yükte rakip yeniden kelepçelenebilir.
+        st.items[0].push(Item::Shackle);
+        let slot = (st.items[0].len() - 1) as u8;
+        use_at(&mut st, slot, &mut src).unwrap();
+        assert_eq!(st.shackled, Some(1));
     }
 
     /// T-104: son fişek → yeni yükleme + R2/R3'te eşya dağıtımı (kural 7).

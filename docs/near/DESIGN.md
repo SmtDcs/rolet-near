@@ -147,7 +147,7 @@ Parametreler (kontrat sabitleri, ayarlanabilir; Buckshot'tan teyide göre günce
 4. Kelepçe: rakip kelepçeliyse veya bu sıra zincirinde kelepçesi yeni kırıldıysa kullanılamaz. Sıra kelepçeli oyuncuya geçecekken o sıra atlanır ve kelepçe kırılır; sıra tekrar kullanana döner.
 5. Boşla kendine ateş edince sıra kalır; kelepçe/testere durumları değişmez (testere hariç: atış yapıldığı için sıfırlanır).
 6. Can 0 → round biter. Round bitince tüm eşyalar, testere, kelepçe sıfırlanır; yeni round yeni canlarla ve yeni yüklemeyle başlar.
-7. Fişek bitince yeni yükleme + (R2/R3'te) eşya dağıtımı.
+7. Fişek bitince yeni yükleme + (R2/R3'te) eşya dağıtımı; yeni yükte kelepçe kalkar.
 8. Eşya etkileri §2.4 tablosuyla birebir. Belirsiz oranlar (`ilaç`) kontrat sabiti olarak tanımlanır.
 9. Rakibin eşyasını çalma (adrenalin karşılığı): hedef slot seçilir, eşya rakipten silinir ve **hemen** çalan adına uygulanır. Çalınan eşya bu sırada uygulanamazsa (ör. rakip zaten kelepçeli) işlem reddedilir ve hiçbir şey tüketilmez.
 
