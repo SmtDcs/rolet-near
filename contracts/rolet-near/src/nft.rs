@@ -9,7 +9,9 @@
 //! ekleyemediğinden (DESIGN §4.3) oyun anahtarlarıyla satın alma imkânsızdır.
 
 use crate::{Contract, ContractExt};
-use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
+use near_contract_standards::non_fungible_token::core::{
+    NonFungibleTokenCore, NonFungibleTokenResolver,
+};
 use near_contract_standards::non_fungible_token::enumeration::NonFungibleTokenEnumeration;
 use near_contract_standards::non_fungible_token::metadata::{
     NFT_METADATA_SPEC, NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata,
@@ -19,6 +21,7 @@ use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, near, require, AccountId, NearToken, Promise, PromiseOrValue};
+use std::collections::HashMap;
 
 /// Başlangıç karakteri (DESIGN §3.5: Kuleci, Ayarcı, Kaçak).
 /// Rust tanımlayıcıları ASCII'dir; JSON'da varyant adları görünür.
@@ -102,6 +105,7 @@ impl Contract {
                 near_sdk::serde_json::json!({
                     "kind": kind,
                     "durability": self.config.durability,
+                    "durability_note": "canlı değer için get_character(token_id) kullanın",
                 })
                 .to_string(),
             ),
@@ -206,10 +210,35 @@ impl NonFungibleTokenMetadataProvider for Contract {
             name: "Rolet".to_string(),
             symbol: "ROLET".to_string(),
             icon: None,
-            base_uri: None,
+            base_uri: Some("https://rolet.app".to_string()),
             reference: None,
             reference_hash: None,
         }
+    }
+}
+
+/// NEP-171 resolver: `nft_transfer_call` sonrası iade/iptal durumunda token'ı
+/// önceki sahibine döndürür; transfer ile resolve arasında token maçta kilitlendiyse
+/// (S-06 yarış durumu) iadeyi reddedip token'ı alıcıda bırakır (`true`).
+#[near]
+impl NonFungibleTokenResolver for Contract {
+    #[private]
+    fn nft_resolve_transfer(
+        &mut self,
+        previous_owner_id: AccountId,
+        receiver_id: AccountId,
+        token_id: TokenId,
+        approved_account_ids: Option<HashMap<AccountId, u64>>,
+    ) -> bool {
+        if self.character.get(&token_id).is_some_and(|s| s.locked_in.is_some()) {
+            return true;
+        }
+        self.tokens.nft_resolve_transfer(
+            previous_owner_id,
+            receiver_id,
+            token_id,
+            approved_account_ids,
+        )
     }
 }
 
@@ -310,6 +339,11 @@ mod tests {
         assert_eq!(extra["durability"], 10);
         assert_eq!(c.nft_metadata().spec, NFT_METADATA_SPEC);
         assert_eq!(c.nft_metadata().symbol, "ROLET");
+        assert_eq!(c.nft_metadata().base_uri.as_deref(), Some("https://rolet.app"));
+        assert_eq!(
+            extra["durability_note"],
+            "canlı değer için get_character(token_id) kullanın"
+        );
     }
 
     /// T-109 bitti kuralı: kilitli token'ın transferi reddedilir.
@@ -376,5 +410,37 @@ mod tests {
             .build();
         near_sdk::testing_env!(ctx);
         c.buy_character(Kind::Kuleci);
+    }
+
+    /// FIX-13 (S-06): transfer ile resolve arasında token maçta kilitlenirse
+    /// `nft_resolve_transfer` iadeyi reddedip token'ı alıcıda bırakır (`true`).
+    #[test]
+    fn resolve_transfer_keeps_locked_token_with_receiver() {
+        let mut c = setup(one_near(), "alice.testnet");
+        let token_id = c.buy_character(Kind::Kuleci);
+
+        // Alice -> Bob transferi yapıldıktan hemen sonra Bob maçta kilitler.
+        let bob: AccountId = "bob.testnet".parse().unwrap();
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let ctx_transfer = VMContextBuilder::new()
+            .predecessor_account_id(alice.clone())
+            .attached_deposit(NearToken::from_yoctonear(1))
+            .build();
+        near_sdk::testing_env!(ctx_transfer);
+        c.nft_transfer(bob.clone(), token_id.clone(), None, None);
+
+        let mut st = c.character_state(&token_id).unwrap();
+        st.locked_in = Some(42);
+        c.character.insert(&token_id, &st);
+
+        // Contract kendisine #[private] nft_resolve_transfer çağırır.
+        let ctx_resolve = VMContextBuilder::new()
+            .current_account_id("contract.testnet".parse().unwrap())
+            .predecessor_account_id("contract.testnet".parse().unwrap())
+            .build();
+        near_sdk::testing_env!(ctx_resolve);
+        let kept_by_receiver = c.nft_resolve_transfer(alice, bob.clone(), token_id.clone(), None);
+        assert!(kept_by_receiver);
+        assert_eq!(c.nft_token(token_id).unwrap().owner_id, bob);
     }
 }

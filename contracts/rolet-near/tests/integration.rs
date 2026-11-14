@@ -582,3 +582,153 @@ async fn fix04_low_balance_match_finishes_and_credits_owed() -> Result<(), Box<d
 
     Ok(())
 }
+
+fn compile_mock_nft_receiver() -> Vec<u8> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_path = manifest_dir.join("target/mock_nft_receiver.rs");
+    let wasm_path = manifest_dir.join("target/mock_nft_receiver.wasm");
+    let src = r#"#![no_std]
+#[link(wasm_import_module = "env")]
+extern "C" {
+    fn input(register_id: u64);
+    fn register_len(register_id: u64) -> u64;
+    fn read_register(register_id: u64, ptr: u64);
+    fn value_return(value_len: u64, value_ptr: u64);
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+#[no_mangle]
+pub extern "C" fn nft_on_transfer() {
+    unsafe {
+        input(0);
+        let len = register_len(0) as usize;
+        let mut buf = [0u8; 1024];
+        let copy_len = if len < buf.len() { len } else { buf.len() };
+        read_register(0, buf.as_mut_ptr() as u64);
+        let needle = b"refund";
+        let mut found = false;
+        let mut i = 0usize;
+        while i + needle.len() <= copy_len {
+            let mut j = 0usize;
+            while j < needle.len() && buf[i + j] == needle[j] {
+                j += 1;
+            }
+            if j == needle.len() {
+                found = true;
+                break;
+            }
+            i += 1;
+        }
+        if found {
+            value_return(4, b"true".as_ptr() as u64);
+        } else {
+            value_return(5, b"false".as_ptr() as u64);
+        }
+    }
+}
+"#;
+    std::fs::write(&src_path, src).expect("mock_nft_receiver.rs yazılabilmeli");
+    let status = std::process::Command::new("rustc")
+        .args([
+            "--target",
+            "wasm32-unknown-unknown",
+            "--crate-type",
+            "cdylib",
+            "-C",
+            "opt-level=z",
+            "-o",
+        ])
+        .arg(&wasm_path)
+        .arg(&src_path)
+        .status()
+        .expect("rustc çağrılabilmeli");
+    assert!(status.success(), "mock_nft_receiver wasm derlenebilmeli");
+    std::fs::read(&wasm_path).expect("mock_nft_receiver.wasm okunabilmeli")
+}
+
+/// FIX-13: `nft_transfer_call` sonrası alıcı kontrat `true` (iade) döndürdüğünde
+/// `nft_resolve_transfer` token'ı eski sahibine geri taşır; `false` durumunda
+/// token alıcıda kalır; `nft_metadata().base_uri` set edilmiştir.
+#[tokio::test]
+async fn fix13_nft_transfer_call_refunds_on_receiver_request() -> Result<(), Box<dyn std::error::Error>>
+{
+    let worker = near_workspaces::sandbox().await?;
+    let wasm = load_wasm();
+    let contract = worker.dev_deploy(&wasm).await?;
+    let receiver = worker.dev_deploy(&compile_mock_nft_receiver()).await?;
+    let owner = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+
+    owner
+        .call(contract.id(), "new")
+        .args_json(json!({ "owner": owner.id(), "config": Config::default() }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    // S-14: base_uri artık set.
+    let meta: near_sdk::serde_json::Value = contract.view("nft_metadata").await?.json()?;
+    assert_eq!(meta["base_uri"], "https://rolet.app");
+
+    let token_id: String = alice
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(near_sdk::NearToken::from_near(1))
+        .transact()
+        .await?
+        .json()?;
+
+    // 1. Alıcı iade ister (`msg = "refund"` -> `nft_on_transfer` returns `true`).
+    let kept: bool = alice
+        .call(contract.id(), "nft_transfer_call")
+        .args_json(json!({
+            "receiver_id": receiver.id(),
+            "token_id": token_id,
+            "approval_id": null,
+            "memo": null,
+            "msg": "refund",
+        }))
+        .deposit(near_sdk::NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?
+        .json()?;
+    assert!(!kept, "iade istendiğinde token alıcıda kalmamalı");
+
+    let tok_after_refund: near_sdk::serde_json::Value = contract
+        .view("nft_token")
+        .args_json(json!({ "token_id": token_id }))
+        .await?
+        .json()?;
+    assert_eq!(tok_after_refund["owner_id"], alice.id().as_str());
+
+    // 2. Alıcı kabul eder (`msg = "accept"` -> `nft_on_transfer` returns `false`).
+    let kept2: bool = alice
+        .call(contract.id(), "nft_transfer_call")
+        .args_json(json!({
+            "receiver_id": receiver.id(),
+            "token_id": token_id,
+            "approval_id": null,
+            "memo": null,
+            "msg": "accept",
+        }))
+        .deposit(near_sdk::NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?
+        .json()?;
+    assert!(kept2, "kabul edildiğinde token alıcıda kalmalı");
+
+    let tok_after_accept: near_sdk::serde_json::Value = contract
+        .view("nft_token")
+        .args_json(json!({ "token_id": token_id }))
+        .await?
+        .json()?;
+    assert_eq!(tok_after_accept["owner_id"], receiver.id().as_str());
+
+    Ok(())
+}
