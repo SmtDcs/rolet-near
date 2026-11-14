@@ -286,6 +286,17 @@ impl Load {
         self.fix(pos, src)
     }
 
+    /// Konum 0'daki (atılan) fişeği tüketir (her atıştan sonra pompa çekilir;
+    /// DESIGN §2.3.4). `live_left`/`blank_left` gerçek kalanlarla senkron kalır.
+    pub fn advance(&mut self, shell: Shell) {
+        self.fixed.remove(0);
+        self.remaining -= 1;
+        match shell {
+            Shell::Live => self.live_left -= 1,
+            Shell::Blank => self.blank_left -= 1,
+        }
+    }
+
     /// Lazy draw çekirdeği (DESIGN §4.6): konum daha önce çekildiyse
     /// kaynağı tüketmeden aynı sonucu döner.
     pub fn fix(&mut self, pos: usize, src: &mut dyn ShellSource) -> Result<Shell, GameError> {
@@ -368,6 +379,128 @@ pub fn deal_items(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource
         }
     }
     actions
+}
+
+/// `state.load`'a yeni yükleme kurar ve `LoadStarted` + (R2/R3'te) eşya
+/// dağıtım aksiyonlarını üretir — `fire` ve `Flask`/`Tincture` ortak yolu.
+fn reload(state: &mut GameState, cfg: &Config, src: &mut dyn ShellSource, actions: &mut Vec<Action>) {
+    state.load = new_load(state.round, src);
+    actions.push(Action::LoadStarted {
+        live: state.load.announced_live,
+        blank: state.load.announced_blank,
+        total: state.load.remaining,
+    });
+    actions.extend(deal_items(state, cfg, src));
+}
+
+/// `victim` oyuncusuna `dmg` hasar uygular. Can 0 olursa round biter ve
+/// kazanan döner; `actions` içine `RoundEnded` (+ `HealCut` eşik ihlali
+/// değilse) ve yeni round kurulumu ya da `MatchEnded` eklenmiştir.
+/// Değişmez: round sonunda tüm round durumu sıfırlanır (§3.2 kural 6),
+/// yeni round'u kaybeden başlatır (§3.1 [KARAR]).
+fn apply_damage(
+    state: &mut GameState,
+    cfg: &Config,
+    victim: usize,
+    dmg: u8,
+    actions: &mut Vec<Action>,
+    src: &mut dyn ShellSource,
+) -> Option<u8> {
+    state.hp[victim] = state.hp[victim].saturating_sub(dmg);
+    if dmg > 0 && state.hp[victim] > 0 && !state.heal_cut {
+        if let Some(threshold) = cfg
+            .rounds
+            .get(state.round.saturating_sub(1) as usize)
+            .and_then(|r| r.heal_cut_at)
+        {
+            if state.hp[victim] <= threshold {
+                state.heal_cut = true;
+                actions.push(Action::HealCut);
+            }
+        }
+    }
+    if state.hp[victim] > 0 {
+        return None;
+    }
+    let winner = (1 - victim) as u8;
+    state.score[winner as usize] += 1;
+    actions.push(Action::RoundEnded { winner, score: state.score });
+    if state.score[winner as usize] >= 2 {
+        actions.push(Action::MatchEnded { winner, reward: cfg.reward.as_yoctonear() });
+        return Some(winner);
+    }
+    // Skorlar 2'nin altında olduğundan en fazla 2 round oynanmıştır;
+    // `cfg.rounds` 3 girdilidir, indeks güvenli.
+    state.round += 1;
+    let rc = &cfg.rounds[state.round as usize - 1];
+    state.hp = [rc.start_hp, rc.start_hp];
+    state.max_hp = rc.start_hp;
+    state.heal_cut = false;
+    state.items = [Vec::new(), Vec::new()];
+    state.shackled = None;
+    state.shackle_broke_this_turn = false;
+    state.saw_active = false;
+    state.turn = victim as u8;
+    reload(state, cfg, src, actions);
+    Some(winner)
+}
+
+/// Ateş etme (T-104, DESIGN §3.2 kural 1–7). `actor` sıra sahibi olmalıdır;
+/// tüm durum geçişleri `Action` olarak döner (istemci animasyon kuyruğu §4.8).
+///
+/// - Hasar: dolu → 1 (testere aktifken 2), boş → 0 (§2.3).
+/// - Testere atışla biter (dolu veya boş fark etmez; kural 3/5).
+/// - Boşla kendine ateşte sıra kalır; aksi halde rakibe geçer (kural 5).
+/// - Sıra kelepçeli oyuncuya geçerken atlanır, kelepçe kırılır ve sıra
+///   tekrar kullanana döner; kırılma bu "sıra zinciri"nde hatırlanır (kural 4).
+/// - Can 0 → round sonu; skor 2 → maç sonu; fişek bitti → yeni yükleme
+///   + dağıtım (kural 6/7, §3.1).
+pub fn fire(
+    state: &mut GameState,
+    cfg: &Config,
+    actor: u8,
+    target: Target,
+    src: &mut dyn ShellSource,
+) -> Result<Vec<Action>, GameError> {
+    if state.score[0] >= 2 || state.score[1] >= 2 {
+        return Err(GameError::MatchFinished);
+    }
+    if actor > 1 || actor != state.turn {
+        return Err(GameError::NotYourTurn);
+    }
+    let shell = state.load.current(src)?;
+    let actor = actor as usize;
+    let damage = match shell {
+        Shell::Blank => 0,
+        Shell::Live if state.saw_active => 2,
+        Shell::Live => 1,
+    };
+    let mut actions = vec![Action::Shot { player: actor as u8, target, shell, damage }];
+    state.load.advance(shell);
+    actions.push(Action::Ejected { shell });
+    state.saw_active = false;
+    let victim = match target {
+        Target::Opponent => 1 - actor,
+        Target::SelfTarget => actor,
+    };
+    if apply_damage(state, cfg, victim, damage, &mut actions, src).is_some() {
+        return Ok(actions);
+    }
+    if !(shell == Shell::Blank && target == Target::SelfTarget) {
+        let next = 1 - actor;
+        state.turn = next as u8;
+        state.shackle_broke_this_turn = false;
+        if state.shackled == Some(next as u8) {
+            actions.push(Action::TurnSkipped { player: next as u8 });
+            state.shackled = None;
+            state.shackle_broke_this_turn = true;
+            state.turn = actor as u8;
+        }
+    }
+    if state.load.is_empty() {
+        reload(state, cfg, src, &mut actions);
+    }
+    Ok(actions)
 }
 
 #[cfg(test)]
@@ -613,5 +746,257 @@ mod tests {
 
         let err = GameError::NoShellsLeft;
         assert_eq!(err.to_string(), "GameError: no shells left");
+    }
+
+    // ------------------------------------------------------------------
+    // T-104: ateş etme ve sıra mantığı
+    // ------------------------------------------------------------------
+
+    fn fire_state(round: u8, load: Load) -> GameState {
+        let cfg = Config::default();
+        state_for_round(round, load, &cfg)
+    }
+
+    /// T-104: kendine boş → hasar yok, sıra sende kalır (DESIGN §2.3).
+    #[test]
+    fn blank_self_shot_keeps_turn() {
+        let mut src = ScriptedSource::new(vec![Shell::Blank]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        let actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![
+                Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Blank, damage: 0 },
+                Action::Ejected { shell: Shell::Blank },
+            ]
+        );
+        assert_eq!(st.turn, 0);
+        assert_eq!(st.hp, [2, 2]);
+        assert_eq!(st.load.remaining, 1);
+        assert_eq!((st.load.live_left, st.load.blank_left), (1, 0));
+    }
+
+    /// T-104: kendine dolu → 1 hasar, sıra rakibe geçer.
+    #[test]
+    fn live_self_shot_passes_turn() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        assert_eq!(st.hp, [1, 2]);
+        assert_eq!(st.turn, 1);
+    }
+
+    /// T-104: rakibe boş → hasar yok, sıra rakibe geçer.
+    #[test]
+    fn blank_opponent_shot_passes_turn() {
+        let mut src = ScriptedSource::new(vec![Shell::Blank]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(st.hp, [2, 2]);
+        assert_eq!(st.turn, 1);
+        assert_eq!(
+            actions[0],
+            Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Blank, damage: 0 }
+        );
+    }
+
+    /// T-104: rakibe dolu → 1 hasar, sıra rakibe geçer.
+    #[test]
+    fn live_opponent_shot_deals_damage() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(st.hp, [2, 1]);
+        assert_eq!(st.turn, 1);
+        assert_eq!(
+            actions[0],
+            Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Live, damage: 1 }
+        );
+    }
+
+    /// T-104: testereli dolu → 2 hasar, atıştan sonra testere kapalı.
+    #[test]
+    fn sawed_live_shot_deals_two_damage_and_resets_saw() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = fire_state(2, Load::new(2, 2));
+        st.saw_active = true;
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(st.hp, [4, 2]);
+        assert!(!st.saw_active);
+        assert_eq!(actions[0], Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Live, damage: 2 });
+    }
+
+    /// T-104: testereli boş → hasar yok ama testere yine kapanır (kural 5).
+    #[test]
+    fn sawed_blank_shot_resets_saw() {
+        let mut src = ScriptedSource::new(vec![Shell::Blank]);
+        let mut st = fire_state(2, Load::new(2, 2));
+        st.saw_active = true;
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(st.hp, [4, 4]);
+        assert!(!st.saw_active);
+        assert_eq!(
+            actions[0],
+            Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Blank, damage: 0 }
+        );
+    }
+
+    /// T-104: kelepçeli rakip → sırası atlanır, kelepçe kırılır, sıra
+    /// kullanana döner; kırılma bilgisi aynı sıra zincirinde kalır, sıra
+    /// gerçekten rakibe geçtiğinde temizlenir (§3.2 kural 4).
+    #[test]
+    fn shackled_opponent_is_skipped_then_shackle_broken() {
+        let mut src = ScriptedSource::new(vec![Shell::Blank, Shell::Blank, Shell::Blank]);
+        let mut st = fire_state(1, Load::new(1, 3));
+        st.shackled = Some(1);
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![
+                Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Blank, damage: 0 },
+                Action::Ejected { shell: Shell::Blank },
+                Action::TurnSkipped { player: 1 },
+            ]
+        );
+        assert_eq!(st.turn, 0);
+        assert_eq!(st.shackled, None);
+        assert!(st.shackle_broke_this_turn);
+        // Boşla kendine ateş sırayı kullananda tutar → aynı zincir.
+        fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        assert!(st.shackle_broke_this_turn);
+        // Sıra rakibe gerçekten geçince yeni zincir başlar.
+        fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(st.turn, 1);
+        assert!(!st.shackle_broke_this_turn);
+    }
+
+    /// T-104: son fişek → yeni yükleme + R2/R3'te eşya dağıtımı (kural 7).
+    #[test]
+    fn last_shell_triggers_reload_with_items() {
+        let mut src =
+            ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0; 8]);
+        let mut st = fire_state(2, Load::new(1, 1));
+        let mut actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        actions.extend(fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap());
+        assert_eq!(
+            actions,
+            vec![
+                Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Blank, damage: 0 },
+                Action::Ejected { shell: Shell::Blank },
+                Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Live, damage: 1 },
+                Action::Ejected { shell: Shell::Live },
+                Action::LoadStarted { live: 1, blank: 1, total: 2 },
+                Action::ItemsDealt { player: 0, items: vec![Item::Loupe, Item::Loupe] },
+                Action::ItemsDealt { player: 1, items: vec![Item::Loupe, Item::Loupe] },
+            ]
+        );
+        assert_eq!(st.load.remaining, 2);
+        assert_eq!(st.turn, 1); // ikinci atış dolu → sıra geçti
+        assert_eq!(st.hp, [3, 4]);
+    }
+
+    /// T-104: son fişek R1'de → yükleme var, eşya yok.
+    #[test]
+    fn r1_reload_deals_no_items() {
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Blank, Shell::Live], vec![0, 0]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        let mut actions = fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap();
+        actions.extend(fire(&mut st, &Config::default(), 0, Target::SelfTarget, &mut src).unwrap());
+        assert_eq!(actions.len(), 5);
+        assert_eq!(actions[4], Action::LoadStarted { live: 1, blank: 1, total: 2 });
+        assert!(st.items[0].is_empty() && st.items[1].is_empty());
+    }
+
+    /// T-104: can 0 → round biter, kaybeden yeni round'u başlatır (§3.1 [KARAR]),
+    /// round durumu sıfırlanır ve yeni yükleme + dağıtım gelir (kural 6).
+    #[test]
+    fn death_ends_round_and_loser_starts_next() {
+        let mut src = ScriptedSource::with_rolls(vec![Shell::Live], vec![0; 8]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        st.hp = [2, 1];
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(actions[2], Action::RoundEnded { winner: 0, score: [1, 0] });
+        assert_eq!(actions[3], Action::LoadStarted { live: 1, blank: 1, total: 2 });
+        assert_eq!(st.round, 2);
+        assert_eq!(st.hp, [4, 4]);
+        assert_eq!(st.max_hp, 4);
+        assert_eq!(st.turn, 1); // kaybeden başlar
+        assert_eq!(st.items[0].len(), 2);
+        assert!(!st.heal_cut);
+    }
+
+    /// T-104: 2. round galibiyeti → maç sonu (2 puan; §3.1).
+    #[test]
+    fn second_round_win_ends_match() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = fire_state(2, Load::new(1, 1));
+        st.score = [1, 0];
+        st.hp = [4, 1];
+        let cfg = Config::default();
+        let actions = fire(&mut st, &cfg, 0, Target::Opponent, &mut src).unwrap();
+        assert_eq!(
+            actions,
+            vec![
+                Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Live, damage: 1 },
+                Action::Ejected { shell: Shell::Live },
+                Action::RoundEnded { winner: 0, score: [2, 0] },
+                Action::MatchEnded { winner: 0, reward: cfg.reward.as_yoctonear() },
+            ]
+        );
+        assert_eq!(st.round, 2);
+        // Maç bitti; sıra anlamsızdır ve kullananda kalır.
+        assert_eq!(st.turn, 0);
+    }
+
+    /// T-104: R3'te can eşiğin (2) altına inince iyileşme kesilir (§3.2 kural 8).
+    #[test]
+    fn heal_cut_triggers_at_threshold() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = fire_state(3, Load::new(2, 2));
+        st.hp = [5, 3];
+        st.saw_active = true;
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert!(st.heal_cut);
+        assert_eq!(st.hp, [5, 1]);
+        assert_eq!(actions[2], Action::HealCut);
+    }
+
+    /// T-104: öldüren atış HealCut üretmez — round zaten bitiyor.
+    /// (R3'e 1-1 girilir; R3 galibi maçı alır → MatchEnded.)
+    #[test]
+    fn fatal_shot_does_not_emit_heal_cut() {
+        let mut src = ScriptedSource::new(vec![Shell::Live]);
+        let mut st = fire_state(3, Load::new(2, 2));
+        st.score = [1, 1];
+        st.hp = [5, 2];
+        st.saw_active = true;
+        let actions = fire(&mut st, &Config::default(), 0, Target::Opponent, &mut src).unwrap();
+        assert!(!st.heal_cut);
+        assert!(matches!(actions[2], Action::RoundEnded { winner: 0, .. }));
+        assert!(matches!(actions[3], Action::MatchEnded { winner: 0, .. }));
+        assert!(!actions.iter().any(|a| matches!(a, Action::HealCut)));
+    }
+
+    /// T-104: sırası olmayan oyuncu → hata; boş tüfek → hata; maç bitti → hata.
+    #[test]
+    fn fire_rejects_wrong_turn_empty_load_and_finished_match() {
+        let mut src = ScriptedSource::new(vec![Shell::Blank]);
+        let mut st = fire_state(1, Load::new(1, 1));
+        assert_eq!(
+            fire(&mut st, &Config::default(), 1, Target::Opponent, &mut src),
+            Err(GameError::NotYourTurn)
+        );
+        let mut empty = fire_state(1, Load::new(1, 1));
+        empty.load = Load::new(0, 0);
+        assert_eq!(
+            fire(&mut empty, &Config::default(), 0, Target::Opponent, &mut src),
+            Err(GameError::NoShellsLeft)
+        );
+        let mut done = fire_state(1, Load::new(1, 1));
+        done.score = [2, 0];
+        assert_eq!(
+            fire(&mut done, &Config::default(), 0, Target::Opponent, &mut src),
+            Err(GameError::MatchFinished)
+        );
     }
 }
