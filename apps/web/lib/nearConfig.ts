@@ -47,9 +47,19 @@ export const WALLET_ONLY_METHODS = [
 export type WalletOnlyMethod = (typeof WALLET_ONLY_METHODS)[number];
 
 /**
+ * Minimum prepaid gas required by the contract for FC game actions (15 Tgas).
+ */
+export const MIN_ACTION_GAS = BigInt(15_000_000_000_000);
+
+/**
  * Prepaid gas per FC game action: 20 Tgas (contract MIN_ACTION_GAS is 15 Tgas).
  */
 export const ACTION_GAS = BigInt(20_000_000_000_000);
+
+/**
+ * Maximum prepaid gas allowed per NEAR transaction/action (300 Tgas).
+ */
+export const MAX_ACTION_GAS = BigInt(300_000_000_000_000);
 
 /**
  * FunctionCall access key allowance in yoctoNEAR (matches contracts/rolet-near/init-config.json allowance_hint).

@@ -14,6 +14,8 @@ import {
 import { baseDecode, baseEncode } from "@near-js/utils";
 import {
   ACTION_GAS,
+  MAX_ACTION_GAS,
+  MIN_ACTION_GAS,
   isGameMethod,
   type GameMethod,
 } from "./nearConfig";
@@ -31,6 +33,17 @@ export class WalletRequiredError extends Error {
     super(`Method "${method}" requires full wallet approval`);
     this.name = "WalletRequiredError";
     this.method = method;
+  }
+}
+
+export class InvalidGasError extends Error {
+  readonly gas: bigint;
+  constructor(gas: bigint) {
+    super(
+      `Gas ${gas.toString()} is outside allowed range [${MIN_ACTION_GAS.toString()}, ${MAX_ACTION_GAS.toString()}]`,
+    );
+    this.name = "InvalidGasError";
+    this.gas = gas;
   }
 }
 
@@ -133,6 +146,14 @@ export interface GameCaller {
 export function backoffMs(attempt: number): number {
   const n = Math.max(0, Math.floor(attempt));
   return Math.min(250 * 2 ** Math.min(n, 5), 8000);
+}
+
+/**
+ * Short increasing delay in milliseconds for InvalidNonce retries.
+ */
+export function nonceBackoffMs(attempt: number): number {
+  const n = Math.max(0, Math.floor(attempt));
+  return Math.min(50 * 2 ** Math.min(n, 4), 800);
 }
 
 function resolveKeyPair(input: KeyPairInput): KeyPair {
@@ -243,6 +264,7 @@ export function createGameCaller(opts: GameCallerOptions): GameCaller {
           if (nonceRetries >= maxNonceRetries) {
             throw new NonceRetryExhaustedError(err);
           }
+          await sleep(nonceBackoffMs(nonceRetries));
           nonceRetries += 1;
           continue;
         }
@@ -264,6 +286,7 @@ export function createGameCaller(opts: GameCallerOptions): GameCaller {
           if (nonceRetries >= maxNonceRetries) {
             throw new NonceRetryExhaustedError(parsed.failure);
           }
+          await sleep(nonceBackoffMs(nonceRetries));
           nonceRetries += 1;
           continue;
         }
@@ -285,6 +308,9 @@ export function createGameCaller(opts: GameCallerOptions): GameCaller {
         return Promise.reject(new WalletRequiredError(String(method)));
       }
       const gas = callOpts?.gas ?? ACTION_GAS;
+      if (gas < MIN_ACTION_GAS || gas > MAX_ACTION_GAS) {
+        return Promise.reject(new InvalidGasError(gas));
+      }
       const run = () => executeAttempt(method, args, gas);
       const next = queue.then(run, run);
       queue = next.catch(() => undefined);

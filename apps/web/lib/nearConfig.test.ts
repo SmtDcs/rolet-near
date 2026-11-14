@@ -8,6 +8,8 @@ import {
   DEFAULT_NEAR_RPC_URL,
   FC_ALLOWANCE_YOCTO,
   GAME_METHODS,
+  MAX_ACTION_GAS,
+  MIN_ACTION_GAS,
   WALLET_ONLY_METHODS,
   isGameMethod,
   readNearConfig,
@@ -36,9 +38,11 @@ test("FC_ALLOWANCE_YOCTO matches contracts/rolet-near/init-config.json allowance
   assert.equal(FC_ALLOWANCE_YOCTO, initConfig.allowance_hint);
 });
 
-test("ACTION_GAS is within [15 Tgas, 20 Tgas]", () => {
-  const gasNum = Number(ACTION_GAS);
-  assert.ok(gasNum >= 15e12 && gasNum <= 20e12, `unexpected gas: ${ACTION_GAS}`);
+test("ACTION_GAS is within [MIN_ACTION_GAS (15 Tgas), 20 Tgas] and MAX_ACTION_GAS is 300 Tgas", () => {
+  assert.equal(MIN_ACTION_GAS, BigInt(15_000_000_000_000));
+  assert.equal(MAX_ACTION_GAS, BigInt(300_000_000_000_000));
+  assert.ok(ACTION_GAS >= MIN_ACTION_GAS && ACTION_GAS <= BigInt(20_000_000_000_000));
+  assert.ok(ACTION_GAS <= MAX_ACTION_GAS);
 });
 
 test("readNearConfig uses defaults and accepts injected env values", () => {

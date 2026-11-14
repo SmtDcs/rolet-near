@@ -6,12 +6,13 @@ import type { SignedTransaction } from "@near-js/transactions";
 import {
   AccessKeyMissingError,
   AllowanceExhaustedError,
+  InvalidGasError,
   NonceRetryExhaustedError,
   WalletRequiredError,
   createGameCaller,
   type NearCallTransport,
 } from "./nearCall";
-import type { GameMethod } from "./nearConfig";
+import { MAX_ACTION_GAS, MIN_ACTION_GAS, type GameMethod } from "./nearConfig";
 import { generateKeyPair } from "./nearKey";
 import type { OutcomeLike } from "./nearOutcome";
 
@@ -72,17 +73,23 @@ test("sendGameCall retries up to 3 times on InvalidNonce and throws on 4th failu
     },
   };
 
+  const retryDelays1: number[] = [];
   const caller1 = createGameCaller({
     accountId: "alice.testnet",
     contractId: "rolet.testnet",
     keyPair: kp,
     rpcUrl: "http://127.0.0.1:0",
     transport: transportSuccessOn3rd,
+    sleep: async (ms) => {
+      retryDelays1.push(ms);
+    },
   });
 
   const ok = await caller1.sendGameCall("fire", { match_id: "7", target: "Opponent" });
   assert.equal(ok.ok, true);
   assert.equal(sendCalls, 3);
+  assert.equal(retryDelays1.length, 2);
+  assert.ok(retryDelays1[0] > 0 && retryDelays1[0] < retryDelays1[1], `delays: ${retryDelays1}`);
 
   let failCalls = 0;
   const transportAlwaysInvalidNonce: NearCallTransport = {
@@ -95,12 +102,16 @@ test("sendGameCall retries up to 3 times on InvalidNonce and throws on 4th failu
     },
   };
 
+  const retryDelays2: number[] = [];
   const caller2 = createGameCaller({
     accountId: "alice.testnet",
     contractId: "rolet.testnet",
     keyPair: kp,
     rpcUrl: "http://127.0.0.1:0",
     transport: transportAlwaysInvalidNonce,
+    sleep: async (ms) => {
+      retryDelays2.push(ms);
+    },
   });
 
   await assert.rejects(
@@ -108,6 +119,50 @@ test("sendGameCall retries up to 3 times on InvalidNonce and throws on 4th failu
     (err) => err instanceof NonceRetryExhaustedError,
   );
   assert.equal(failCalls, 4);
+  assert.equal(retryDelays2.length, 3);
+  assert.ok(
+    retryDelays2[0] > 0 &&
+      retryDelays2[0] < retryDelays2[1] &&
+      retryDelays2[1] < retryDelays2[2] &&
+      retryDelays2[2] <= 500,
+    `delays: ${retryDelays2}`,
+  );
+});
+
+test("sendGameCall backs off with short increasing delays when outcome failure is InvalidNonce", async () => {
+  const kp = generateKeyPair();
+  const invalidNonce = loadOutcomeFixture("invalid-nonce.json");
+  const fireOutcome = loadOutcomeFixture("fire-success.json") as OutcomeLike;
+
+  const delays: number[] = [];
+  let attempts = 0;
+  const caller = createGameCaller({
+    accountId: "alice.testnet",
+    contractId: "rolet.testnet",
+    keyPair: kp,
+    rpcUrl: "http://127.0.0.1:0",
+    sleep: async (ms) => {
+      delays.push(ms);
+    },
+    transport: {
+      async viewAccessKey() {
+        return { nonce: BigInt(50 + attempts), blockHash: FAKE_BLOCK_HASH };
+      },
+      async sendTransaction() {
+        attempts += 1;
+        if (attempts <= 2) {
+          return { status: { Failure: invalidNonce } };
+        }
+        return fireOutcome;
+      },
+    },
+  });
+
+  const res = await caller.sendGameCall("fire", { match_id: "7", target: "Opponent" });
+  assert.equal(res.ok, true);
+  assert.equal(attempts, 3);
+  assert.equal(delays.length, 2);
+  assert.ok(delays[0] > 0 && delays[0] < delays[1] && delays[1] <= 500, `delays: ${delays}`);
 });
 
 test("sendGameCall backs off with increasing delays on HTTP 429", async () => {
@@ -259,4 +314,41 @@ test("concurrent sendGameCall invocations execute sequentially with ordered nonc
 
   assert.equal(maxConcurrent, 1);
   assert.deepEqual(sentNonces, [BigInt(21), BigInt(22)]);
+});
+
+test("sendGameCall validates gas range [MIN_ACTION_GAS, 300 Tgas] without calling transport on invalid gas", async () => {
+  const kp = generateKeyPair();
+  const fireOutcome = loadOutcomeFixture("fire-success.json") as OutcomeLike;
+  let transportCalled = false;
+  const seenGas: bigint[] = [];
+
+  const caller = createGameCaller({
+    accountId: "alice.testnet",
+    contractId: "rolet.testnet",
+    keyPair: kp,
+    rpcUrl: "http://127.0.0.1:0",
+    transport: {
+      async viewAccessKey() {
+        transportCalled = true;
+        return { nonce: BigInt(1), blockHash: FAKE_BLOCK_HASH };
+      },
+      async sendTransaction(signedTx: SignedTransaction) {
+        transportCalled = true;
+        seenGas.push(signedTx.transaction.actions[0].functionCall?.gas ?? BigInt(0));
+        return fireOutcome;
+      },
+    },
+  });
+
+  for (const badGas of [BigInt(0), MIN_ACTION_GAS - BigInt(1), MAX_ACTION_GAS + BigInt(1)]) {
+    await assert.rejects(
+      () => caller.sendGameCall("fire", {}, { gas: badGas }),
+      (err) => err instanceof InvalidGasError && err.gas === badGas,
+    );
+  }
+  assert.equal(transportCalled, false);
+
+  await caller.sendGameCall("fire", {}, { gas: MIN_ACTION_GAS });
+  await caller.sendGameCall("fire", {}, { gas: MAX_ACTION_GAS });
+  assert.deepEqual(seenGas, [MIN_ACTION_GAS, MAX_ACTION_GAS]);
 });
