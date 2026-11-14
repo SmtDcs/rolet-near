@@ -292,14 +292,13 @@ function DuelClient() {
     if (autoRevealLockRef.current === key) return;
     autoRevealLockRef.current = key;
 
-    let active = true;
+    // No per-run "active" flag: the match poll re-renders `flow` every tick,
+    // which would otherwise drop the result of an in-flight reveal.
     void (async () => {
       try {
         await revealMatch(flow.matchId!);
-        if (!active) return;
         dispatch({ type: "REVEAL_SUBMITTED" });
       } catch (err) {
-        if (!active) return;
         autoRevealLockRef.current = null;
         dispatch({
           type: "ERROR",
@@ -308,10 +307,6 @@ function DuelClient() {
         });
       }
     })();
-
-    return () => {
-      active = false;
-    };
   }, [flow, revealMatch]);
 
   // Clock ticker during reveal & play phases
@@ -325,14 +320,23 @@ function DuelClient() {
     };
   }, [flow.step]);
 
+  // Keep the latest snapshot in a ref so resyncs don't rebuild the transport mid-game
+  const matchSnapshotRef = useRef(matchSnapshot);
+  useEffect(() => {
+    matchSnapshotRef.current = matchSnapshot;
+  }, [matchSnapshot]);
+  const hasMatchSnapshot = matchSnapshot !== null && matchSnapshot !== undefined;
+
   // Active NearTransport for play phase
+  /* eslint-disable react-hooks/refs -- snapshot ref is read only to seed a new transport */
   const transport = useMemo(() => {
     if (
       flow.step !== "play" ||
       !flow.matchId ||
       !flow.players ||
       flow.you === null ||
-      !matchSnapshot
+      !hasMatchSnapshot ||
+      !matchSnapshotRef.current
     ) {
       return null;
     }
@@ -342,7 +346,7 @@ function DuelClient() {
       you: flow.you,
       views: roletViews,
       submitCall: (method, args) => sendGameCall(method, args),
-      initialMatch: matchSnapshot,
+      initialMatch: matchSnapshotRef.current,
       onResync: (snap) => {
         setMatchSnapshot(snap);
         dispatch({ type: "SYNC_MATCH", match: snap });
@@ -356,10 +360,11 @@ function DuelClient() {
     flow.players,
     flow.step,
     flow.you,
-    matchSnapshot,
+    hasMatchSnapshot,
     roletViews,
     sendGameCall,
   ]);
+  /* eslint-enable react-hooks/refs */
 
   useEffect(() => {
     return () => {
@@ -747,7 +752,7 @@ function DuelClient() {
                 2 / 6 — Add a restricted game key to send in-match moves without pop-ups.
               </p>
               <p className="text-xs text-[#8f897e]">
-                Only the join, reveal, cancel, fire, use_item and claim_timeout methods are allowed (0.25 NEAR gas allowance).
+                Only the join, reveal, cancel, fire, use_item and claim_timeout methods are allowed (0.5 NEAR gas allowance).
               </p>
               <button
                 type="button"
@@ -806,7 +811,7 @@ function DuelClient() {
                       onClick={handleMintCharacter}
                       className="cursor-pointer border border-[#c6a15b] bg-[#c6a15b] px-4 py-1.5 text-xs font-bold text-[#090909] uppercase disabled:opacity-50"
                     >
-                      {actionBusy ? "BUYING..." : `${mintKind} Buy (1 NEAR)`}
+                      {actionBusy ? "BUYING..." : `Buy ${mintKind}`}
                     </button>
                   </div>
                 </div>

@@ -31,13 +31,15 @@ What the hackathon work contains:
 2. **Walletless turns with a function-call access key** (`apps/web/lib/nearKey*.ts`, `nearCall.ts`, `nearKeyFlow.ts`). The player signs in once with MyNearWallet or Meteor (`@near-wallet-selector` 10.1.4). The dApp gets a function-call key limited to the Rolet contract, and each turn is signed with that key in the browser, with no wallet pop-up per move. A dev-only page at `/dev/near-key` exercises this flow.
 3. **TypeScript game engine with contract parity** (`apps/web/lib/game/`). This includes rules, a redacted per-player model, an action-log sync, an intent state machine, aim gestures, a bot and a wallet-free practice engine. `contracts/rolet-near/tests/vectors_export.rs` exports test vectors from the Rust contract into `docs/near/schema/vectors.json`, and `lib/game/vectors.test.ts` checks that the TS rules match the contract exactly.
 4. **Testnet scripts**: `contracts/rolet-near/scripts/deploy-testnet.sh` (build, deploy, fund), `cli-match.sh` (a two-account match with full-access keys) and `fc-match.py` (a full match where every turn is signed with a function-call key). All of them refuse anything that is not `testnet`.
+5. **NEAR web app** (`apps/web/app/duel`, `profile`, `leaderboard`, `api/rpc`, `api/matchmaking`, `api/stats`; `lib/duelFlow.ts`, `lib/game/nearTransport.ts`, `actionPoller.ts`, `clock.ts`; `hooks/useRoletNear.ts`; `components/NearProvider.tsx`). A wallet-selector provider, an RPC proxy, symmetric matchmaking with NEP-413 signed queue entries, a duel state machine, an action poller that turns contract actions into scene beats, and a turn clock with a timeout-claim button.
 
 ### Status (at submission time)
 
 - ✅ The contract is complete and tested (unit tests + `near-workspaces` sandbox integration tests).
 - ✅ The NEAR client libraries, the function-call key flow and the TS game engine are implemented and tested.
 - ✅ **Deployed on testnet** as `rolet.rolet-hk-o2611150055.testnet`, and a full match was played on it with function-call keys only. See "Live on NEAR testnet" below.
-- ✅ A wallet-free practice match against a bot is playable at `/practice` (2.5D table, 3D revolver, drag-to-aim). The final art and the on-chain mode in the same scene are still in progress. The UI pages under `apps/web/app` are still mostly the Solana-era UI and are not yet wired to NEAR.
+- ✅ A wallet-free practice match against a bot is playable at `/practice` (2.5D table, 3D revolver, drag-to-aim).
+- ✅ **On-chain duels at `/duel`** against the deployed testnet contract: connect a NEAR testnet wallet, mint a character, get matched, commit-reveal, then play every turn in the same scene with a function-call key (no wallet pop-up per move). `/profile` (characters, rewards) and `/leaderboard` read and write the same contract. The Solana-era code was removed from `apps/web`.
 
 ---
 
@@ -137,7 +139,7 @@ pnpm --filter web test
 pnpm --filter web exec tsc --noEmit
 ```
 
-Result on the submitted commit: `122` tests, `122` passed, `0` failed. `tsc --noEmit` exits `0`.
+Result on the submitted commit: `117` tests, `117` passed, `0` failed. `tsc --noEmit` exits `0`.
 
 ### 4. Deploy your own copy to testnet (optional, needs funded testnet accounts)
 
@@ -169,6 +171,15 @@ You play a full match against a bot. The bot uses the same TypeScript rules engi
 Put the deployed contract ID in `apps/web/.env.local` as `NEXT_PUBLIC_NEAR_NETWORK=testnet` and `NEXT_PUBLIC_ROLET_CONTRACT=...`, run `pnpm --filter web dev`, and open http://localhost:3000/dev/near-key. Sign in with MyNearWallet or Meteor, and the page signs `join` and `fire` with the function-call key.
 
 ---
+
+### 7. Play an on-chain duel (NEAR testnet wallet)
+
+```bash
+pnpm --filter web dev
+# open http://localhost:3000/duel in two browsers (two testnet accounts)
+```
+
+The app defaults to `NEXT_PUBLIC_NEAR_NETWORK=testnet` and `NEXT_PUBLIC_ROLET_CONTRACT=rolet.rolet-hk-o2611150055.testnet` (see `apps/web/.env.example`). Sign in with MyNearWallet or Meteor on testnet, buy a character (1 testnet NEAR), approve the game key once, then press Find match in both browsers. Testnet only, no real money.
 
 ## Game values (`contracts/rolet-near/init-config.json`)
 
