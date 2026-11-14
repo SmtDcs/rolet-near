@@ -48,6 +48,7 @@ mod tests {
         c.fund_treasury();
         assert_eq!(c.treasury, NearToken::from_millinear(250));
         assert_eq!(c.ops_balance, NearToken::ZERO);
+        c.assert_solvent();
     }
 
     /// T-108: withdraw_ops biriken payı owner'a transfer eder ve sıfırlar.
@@ -67,6 +68,7 @@ mod tests {
                 *deposit == NearToken::from_millinear(50),
             _ => false,
         }));
+        c.assert_solvent();
     }
 
     /// T-108: bakiye sıfırsa gereksiz transfer üretmez.

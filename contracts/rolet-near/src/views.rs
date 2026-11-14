@@ -186,6 +186,7 @@ mod tests {
 
         let st = c.get_player("alice.testnet".parse().unwrap());
         assert_eq!(st, PlayerState::default());
+        c.assert_solvent();
     }
 
     /// T-115: get_match gizli alanları sızdırmaz ve revealed bayrağını doğru döner.
@@ -217,6 +218,7 @@ mod tests {
         assert!(!json.contains("commits"));
         assert!(!json.contains("seed"));
         assert!(!json.contains("draw_nonce"));
+        c.assert_solvent();
     }
 
     /// T-115: get_actions since_seq dilimleme ve LOG_CAP (32) sınırı.
@@ -264,6 +266,7 @@ mod tests {
         assert!(matches!(tail[0], Action::ItemUsed { slot: 39, .. }));
         assert!(matches!(tail[1], Action::ItemUsed { slot: 40, .. }));
         assert!(c.get_actions(U64(7), 40).is_empty());
+        c.assert_solvent();
     }
 
     /// T-115: leaderboard wins'e göre azalan sıralar ve from/limit sayfalama yapar.
@@ -317,6 +320,7 @@ mod tests {
         assert_eq!(page.len(), 1);
         assert_eq!(page[0].account_id.as_str(), "bob.testnet");
         assert!(c.leaderboard(Some(10), Some(5)).is_empty());
+        c.assert_solvent();
     }
 
     /// T-115 bitti kuralı: `docs/near/schema/match-view.json` gerçek `MatchView`

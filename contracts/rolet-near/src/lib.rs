@@ -108,6 +108,45 @@ impl Contract {
     }
 }
 
+impl Contract {
+    /// Kontratın depolama kilidi dışındaki serbest bakiyesi (S-02).
+    pub(crate) fn free_balance(&self) -> NearToken {
+        let stake = NearToken::from_yoctonear(
+            env::storage_usage() as u128 * env::storage_byte_cost().as_yoctonear(),
+        );
+        env::account_balance().saturating_sub(stake)
+    }
+
+    /// İşlem sırasında artan depolama maliyetini `treasury`'den düşer (S-02).
+    pub(crate) fn settle_storage(&mut self, storage_before: u64) {
+        let storage_after = env::storage_usage();
+        if storage_after > storage_before {
+            let delta = (storage_after - storage_before) as u128;
+            let cost = NearToken::from_yoctonear(delta * env::storage_byte_cost().as_yoctonear());
+            self.treasury = self.treasury.saturating_sub(cost);
+        }
+    }
+
+    /// S-02 değişmezi: `free_balance >= treasury + ops_balance + Σowed`.
+    #[cfg(test)]
+    pub(crate) fn assert_solvent(&self) {
+        let owed_sum = self.player_index.iter().fold(NearToken::ZERO, |acc, id| {
+            acc.saturating_add(self.player_state(&id).owed)
+        });
+        let liabilities = self
+            .treasury
+            .saturating_add(self.ops_balance)
+            .saturating_add(owed_sum);
+        let free = self.free_balance();
+        assert!(
+            free >= liabilities,
+            "insolvent contract: free={free} < liabilities={liabilities} (treasury={}, ops={}, owed={owed_sum})",
+            self.treasury,
+            self.ops_balance,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +183,7 @@ mod tests {
         assert!(c.paused);
         c.unpause();
         assert!(!c.paused);
+        c.assert_solvent();
     }
 
     /// T-108 bitti kuralı: owner olmayan reddedilir.

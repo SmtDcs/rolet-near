@@ -78,6 +78,7 @@ impl Contract {
     #[payable]
     pub fn buy_character(&mut self, kind: Kind) -> TokenId {
         require!(!self.paused, "contract is paused");
+        let storage_before = env::storage_usage();
         let price = self.config.price;
         let deposit = env::attached_deposit();
         require!(deposit >= price, "insufficient payment");
@@ -121,6 +122,7 @@ impl Contract {
             &token_id,
             &CharacterState { kind, durability: self.config.durability, locked_in: None },
         );
+        self.settle_storage(storage_before);
 
         // Fazla ödemeyi iade et (görev: "fazla ödeme iade").
         let refund = deposit.saturating_sub(price);
@@ -242,14 +244,21 @@ mod tests {
         c.buy_character(Kind::Kuleci);
     }
 
-    /// T-109 bitti kuralı: bölüşüm doğru (0.95 treasury / 0.05 ops) ve mint çalışır.
+    /// T-109 bitti kuralı: bölüşüm doğru (0.95 treasury / 0.05 ops, depolama
+    /// maliyeti treasury'den düşer) ve mint çalışır.
     #[test]
     fn buy_character_splits_payment_and_mints() {
         let mut c = setup(one_near(), "alice.testnet");
+        let storage_before = env::storage_usage();
         let token_id = c.buy_character(Kind::Kuleci);
+        let storage_delta = env::storage_usage().saturating_sub(storage_before) as u128;
+        let storage_cost =
+            NearToken::from_yoctonear(storage_delta * env::storage_byte_cost().as_yoctonear());
+        assert!(storage_cost > NearToken::ZERO);
         assert_eq!(token_id, "kuleci:1");
-        assert_eq!(c.treasury, NearToken::from_millinear(950));
+        assert_eq!(c.treasury, NearToken::from_millinear(950).saturating_sub(storage_cost));
         assert_eq!(c.ops_balance, NearToken::from_millinear(50));
+        c.assert_solvent();
         assert_eq!(c.character_state(&token_id).unwrap().durability, 10);
         assert_eq!(c.character_state(&token_id).unwrap().locked_in, None);
         assert_eq!(c.character_state(&token_id).unwrap().kind, Kind::Kuleci);
@@ -261,13 +270,18 @@ mod tests {
         assert_eq!(c.nft_total_supply(), U128(2));
         // Satıştan hiçbir iade çıkmaz (tam fiyat).
         assert!(get_created_receipts().is_empty());
+        c.assert_solvent();
     }
 
     /// T-109: fazla ödeme iade edilir; bölüşüm tam fiyat üzerinden yapılır.
     #[test]
     fn buy_character_refunds_excess_deposit() {
         let mut c = setup(NearToken::from_near(2), "alice.testnet");
+        let storage_before = env::storage_usage();
         c.buy_character(Kind::Ayarci);
+        let storage_delta = env::storage_usage().saturating_sub(storage_before) as u128;
+        let storage_cost =
+            NearToken::from_yoctonear(storage_delta * env::storage_byte_cost().as_yoctonear());
         let receipts = get_created_receipts();
         assert_eq!(receipts.len(), 1);
         assert_eq!(receipts[0].receiver_id, "alice.testnet".parse::<AccountId>().unwrap());
@@ -276,8 +290,9 @@ mod tests {
                 *deposit == NearToken::from_near(1),
             _ => false,
         }));
-        assert_eq!(c.treasury, NearToken::from_millinear(950));
+        assert_eq!(c.treasury, NearToken::from_millinear(950).saturating_sub(storage_cost));
         assert_eq!(c.ops_balance, NearToken::from_millinear(50));
+        c.assert_solvent();
     }
 
     /// T-109: token metadata'sı (media/extra) NEP-177 alanlarıyla uyumlu.
@@ -338,6 +353,7 @@ mod tests {
             c.nft_supply_for_owner("alice.testnet".parse().unwrap()),
             U128(0)
         );
+        c.assert_solvent();
     }
 
     /// T-109: pause'dayken satış yok.

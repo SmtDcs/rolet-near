@@ -204,15 +204,15 @@ impl Contract {
     /// token kilitleri açılır (durability iade edilmez), oyuncuların `active_match`i
     /// temizlenir, istatistikler yazılır, ödül treasury yeterliyse doğrudan transfer
     /// edilir, yetersizse `owed` olarak kaydedilir (DESIGN §4.7).
-    pub(crate) fn finish_match(&mut self, m: &mut Match, winner: u8) {
+    pub(crate) fn finish_match(&mut self, m: &mut Match, winner: u8, storage_before: u64) {
         m.status = Status::Finished;
         m.winner = Some(winner);
         m.deadline_ms = 0;
         // T-116: bitmiş maçta büyük alanlar budanır, özet (skor, can, oyuncular, seq) kalır.
         m.log.clear();
         m.game.load.fixed.clear();
+        self.matches.insert(&m.id, m);
 
-        let reward = self.config.reward;
         for i in 0..2usize {
             let token_id = &m.tokens[i];
             if let Some(mut ch) = self.character.get(token_id) {
@@ -230,18 +230,26 @@ impl Contract {
             st.played += 1;
             if i == winner as usize {
                 st.wins += 1;
-                if reward > NearToken::ZERO {
-                    if self.treasury >= reward {
-                        self.treasury = self.treasury.saturating_sub(reward);
-                        Promise::new(account.clone()).transfer(reward).detach();
-                    } else {
-                        st.owed = st.owed.saturating_add(reward);
-                    }
-                }
             } else {
                 st.losses += 1;
             }
             self.players.insert(account, &st);
+        }
+
+        // Önce depolama farkını düş, sonra ödülü öde (S-02).
+        self.settle_storage(storage_before);
+
+        let reward = self.config.reward;
+        if reward > NearToken::ZERO {
+            let winner_account = &m.players[winner as usize];
+            if self.treasury >= reward {
+                self.treasury = self.treasury.saturating_sub(reward);
+                Promise::new(winner_account.clone()).transfer(reward).detach();
+            } else {
+                let mut st = self.player_state(winner_account);
+                st.owed = st.owed.saturating_add(reward);
+                self.players.insert(winner_account, &st);
+            }
         }
     }
 
@@ -255,6 +263,7 @@ impl Contract {
     ) -> Vec<Action> {
         require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         require_direct_call();
+        let storage_before = env::storage_usage();
         let player = env::predecessor_account_id();
         let mut m = self.match_or_panic(match_id);
         require!(m.status == Status::Active, "match is not active");
@@ -278,11 +287,12 @@ impl Contract {
         }
 
         if let Some(winner) = match_winner {
-            self.finish_match(&mut m, winner);
+            self.finish_match(&mut m, winner, storage_before);
         } else {
             m.deadline_ms = now_ms() + self.config.turn_ms;
+            self.matches.insert(&m.id, &m);
+            self.settle_storage(storage_before);
         }
-        self.matches.insert(&m.id, &m);
         actions
     }
 
@@ -325,6 +335,7 @@ impl Contract {
     pub fn join(&mut self, match_id: U64, opponent: AccountId, commit: Base64VecU8, token_id: TokenId) {
         require!(!self.paused, "contract is paused");
         require_direct_call();
+        let storage_before = env::storage_usage();
         require!(opponent != env::predecessor_account_id(), "cannot join against yourself");
         require!(commit.0.len() == 32, "commit must be 32 bytes");
         let player = env::predecessor_account_id();
@@ -373,12 +384,14 @@ impl Contract {
                 self.matches.insert(&match_id, &m);
             }
         }
+        self.settle_storage(storage_before);
     }
 
     /// Yalnızca `Pending` maçta ilk katılan iptal edebilir (DESIGN §4.4):
     /// durability iade, kilit açılır, maç `Cancelled`.
     pub fn cancel(&mut self, match_id: U64) {
         require_direct_call();
+        let storage_before = env::storage_usage();
         let player = env::predecessor_account_id();
         let mut m = self.match_or_panic(match_id.0);
         require!(m.status == Status::Pending, "match is not pending");
@@ -386,6 +399,7 @@ impl Contract {
         self.release(&m.players[0].clone(), m.id, &m.tokens[0].clone(), true);
         m.status = Status::Cancelled;
         self.matches.insert(&m.id, &m);
+        self.settle_storage(storage_before);
     }
 
     /// Commit-reveal açılımı (DESIGN §4.4/§4.6, T-111): `sha256(secret ‖
@@ -397,6 +411,7 @@ impl Contract {
     pub fn reveal(&mut self, match_id: U64, secret: Base64VecU8) {
         require!(env::prepaid_gas() >= MIN_ACTION_GAS, "insufficient gas");
         require_direct_call();
+        let storage_before = env::storage_usage();
         require!(secret.0.len() == 32, "secret must be 32 bytes");
         let player = env::predecessor_account_id();
         let mut m = self.match_or_panic(match_id.0);
@@ -448,6 +463,7 @@ impl Contract {
             push_action(&mut m, action);
         }
         self.matches.insert(&m.id, &m);
+        self.settle_storage(storage_before);
     }
 
     /// Sırası gelen oyuncunun ateş hamlesi (T-112, DESIGN §4.7).
@@ -478,6 +494,7 @@ impl Contract {
     ///   çağırır → çağıran kazanır, istatistikler yazılır ve ödül ödenir.
     pub fn claim_timeout(&mut self, match_id: U64) -> Vec<Action> {
         require_direct_call();
+        let storage_before = env::storage_usage();
         let caller = env::predecessor_account_id();
         let mut m = self.match_or_panic(match_id.0);
         let caller_idx = participant_index(&m, &caller);
@@ -505,6 +522,8 @@ impl Contract {
                 let action = Action::TimeoutClaimed { by: caller_idx as u8 };
                 push_action(&mut m, action.clone());
                 produced.push(action);
+                self.matches.insert(&m.id, &m);
+                self.settle_storage(storage_before);
             }
             Status::Active => {
                 let by = caller_idx as u8;
@@ -519,12 +538,11 @@ impl Contract {
                 push_action(&mut m, end_action.clone());
                 produced.push(timeout_action);
                 produced.push(end_action);
-                self.finish_match(&mut m, by);
+                self.finish_match(&mut m, by, storage_before);
             }
             _ => panic!("match cannot be timed out in current status"),
         }
 
-        self.matches.insert(&m.id, &m);
         produced
     }
 
@@ -615,6 +633,7 @@ mod tests {
         // Bob henüz dokunulmadı.
         assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 10);
         assert_eq!(c.player_state(&"bob.testnet".parse().unwrap()).active_match, None);
+        c.assert_solvent();
     }
 
     /// T-110: karşılıklı join → Revealing; süre işler.
@@ -632,6 +651,7 @@ mod tests {
         assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 9);
         assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().locked_in, Some(7));
         assert_eq!(c.player_state(&"bob.testnet".parse().unwrap()).active_match, Some(7));
+        c.assert_solvent();
     }
 
     /// T-110: üçüncü hesap mevcut maça giremez.
@@ -744,6 +764,7 @@ mod tests {
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 10);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
         assert_eq!(c.player_state(&"alice.testnet".parse::<AccountId>().unwrap()).active_match, None);
+        c.assert_solvent();
     }
 
     /// T-110: Revealing'de cancel red.
@@ -915,6 +936,7 @@ mod tests {
         assert_eq!(logs.len(), 1);
         assert!(logs[0].starts_with("EVENT_JSON:"));
         assert!(logs[0].contains("\"event\":\"load_started\""));
+        c.assert_solvent();
     }
 
     /// T-111: ikinci oyuncu (Bob) önce reveal edebilir; simetrik çalışır.
@@ -1059,7 +1081,8 @@ mod tests {
         assert_eq!(m.status, Status::Finished);
         assert_eq!(m.winner, Some(0));
         assert_eq!(m.deadline_ms, 0);
-        assert_eq!(c.treasury, treasury_before.saturating_sub(NearToken::from_millinear(100)));
+        assert!(c.treasury <= treasury_before.saturating_sub(NearToken::from_millinear(100)));
+        c.assert_solvent();
 
         let alice_st = c.player_state(&"alice.testnet".parse().unwrap());
         let bob_st = c.player_state(&"bob.testnet".parse().unwrap());
@@ -1081,6 +1104,7 @@ mod tests {
                 *deposit == NearToken::from_millinear(100),
             _ => false,
         }));
+        c.assert_solvent();
     }
 
     /// T-112: treasury yetersizse maç yine biter, ödül `owed` olarak yazılır
@@ -1108,6 +1132,7 @@ mod tests {
         assert_eq!(alice_st.owed, NearToken::from_millinear(100));
         assert_eq!(alice_st.active_match, None);
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().locked_in, None);
+        c.assert_solvent();
     }
 
     /// T-112: public `fire` ChainSource kullanır, `draw_nonce`, `seq`, `log`,
@@ -1133,6 +1158,7 @@ mod tests {
         let logs = get_logs();
         assert_eq!(logs.len(), actions.len());
         assert!(logs[0].starts_with("EVENT_JSON:"));
+        c.assert_solvent();
     }
 
     /// T-112: log uzunluğu LOG_CAP (32) sınırında budanır; `seq` monotoon artar.
@@ -1250,6 +1276,7 @@ mod tests {
         assert_eq!(c.player_state(&"alice.testnet".parse().unwrap()).active_match, None);
         assert_eq!(c.player_state(&"bob.testnet".parse().unwrap()).active_match, None);
         assert!(get_created_receipts().is_empty());
+        c.assert_solvent();
     }
 
     /// T-113: açmayan taraf, açan tarafa karşı timeout açamaz.
@@ -1273,6 +1300,7 @@ mod tests {
         assert_eq!(c.character_state(&"ayarci:2".to_string()).unwrap().durability, 9);
         assert_eq!(c.player_state(&"alice.testnet".parse().unwrap()).active_match, None);
         assert_eq!(c.player_state(&"bob.testnet".parse().unwrap()).active_match, None);
+        c.assert_solvent();
     }
 
     /// T-113 bitti kuralı: sırası olan oyuncu kendine timeout açamaz.
@@ -1320,6 +1348,7 @@ mod tests {
         let receipts = get_created_receipts();
         assert_eq!(receipts.len(), 1);
         assert_eq!(receipts[0].receiver_id, waiting_acc);
+        c.assert_solvent();
     }
 
     /// T-113: treasury yetersizken owed birikir, `fund_treasury` sonrası
@@ -1354,6 +1383,7 @@ mod tests {
                 *deposit == NearToken::from_millinear(100),
             _ => false,
         }));
+        c.assert_solvent();
     }
 
     #[test]
@@ -1428,6 +1458,37 @@ mod tests {
             end_storage < mid_storage,
             "end_storage ({end_storage}) < mid_storage ({mid_storage}) olmalı (before_mid={before_mid})"
         );
+        c.assert_solvent();
+    }
+
+    // ------------------------------------------------------------------
+    // FIX-03: Depolama muhasebesi
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn storage_accounting_deducts_growth_and_preserves_solvency() {
+        let mut c = setup();
+        c.assert_solvent();
+        let t_after_buy = c.treasury;
+
+        let s0 = env::storage_usage();
+        c.join(U64(7), "bob.testnet".parse().unwrap(), real_commit(1, "alice.testnet", 7), alice_token(&c));
+        let s1 = env::storage_usage();
+        assert!(s1 > s0);
+        let expected_drop = NearToken::from_yoctonear(
+            (s1 - s0) as u128 * env::storage_byte_cost().as_yoctonear(),
+        );
+        assert_eq!(c.treasury, t_after_buy.saturating_sub(expected_drop));
+        c.assert_solvent();
+
+        switch("bob.testnet", NearToken::ZERO);
+        c.join(U64(7), "alice.testnet".parse().unwrap(), real_commit(2, "bob.testnet", 7), bob_token(&c));
+        c.assert_solvent();
+
+        c.reveal(U64(7), secret_of(2));
+        switch("alice.testnet", NearToken::ZERO);
+        c.reveal(U64(7), secret_of(1));
+        c.assert_solvent();
     }
 
     // ------------------------------------------------------------------

@@ -178,10 +178,18 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
     let bob_bal_after = bob.view_account().await?.balance;
     let treasury_after: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
 
-    // Ödül (0.1 NEAR = 100 mNEAR) treasury'den düşüp kazanan bakiyesini artırır
-    // (kazananın ödediği ufak gaz düşüldükten sonra net +80 mNEAR üzeri artış).
+    // Ödül (0.1 NEAR = 100 mNEAR) + maç içi depolama artışı treasury'den düşer;
+    // kazanan bakiyesi ödülle artar (gaz düşüldükten sonra net +80 mNEAR üzeri).
     let expected_reward = near_sdk::NearToken::from_millinear(100);
-    assert_eq!(treasury_after, treasury_before.saturating_sub(expected_reward));
+    assert!(
+        treasury_after <= treasury_before.saturating_sub(expected_reward),
+        "treasury_after ({treasury_after}) <= treasury_before - reward ({}) olmalı",
+        treasury_before.saturating_sub(expected_reward)
+    );
+    assert!(
+        treasury_after >= treasury_before.saturating_sub(expected_reward.saturating_add(near_sdk::NearToken::from_millinear(50))),
+        "depolama kesintisi makul aralıkta olmalı: before={treasury_before}, after={treasury_after}"
+    );
 
     let (winner_before, winner_after, winner_account) = if winner_idx == 0 {
         (alice_bal_before, alice_bal_after, alice.id())
