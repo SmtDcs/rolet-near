@@ -377,6 +377,27 @@
   78%      { opacity: 0.9; }
 }
 
+@keyframes rolet-rival-breathe {
+  0%, 100% { transform: scaleY(1); }
+  50%      { transform: scaleY(1.012); }
+}
+
+@keyframes rolet-lamp-swing {
+  0%, 100% { transform: rotate(-2.2deg); }
+  50%      { transform: rotate(2.2deg); }
+}
+
+@keyframes rolet-gear-spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes rolet-stage-smoke {
+  0%   { transform: translate3d(-12px, 8px, 0) scale(0.98); opacity: 0.14; }
+  50%  { transform: translate3d(10px, -10px, 0) scale(1.04); opacity: 0.24; }
+  100% { transform: translate3d(-12px, 8px, 0) scale(0.98); opacity: 0.14; }
+}
+
 /* ──────────────────────────────────────────────────────────────
    CRT / pixelated UI utilities
    ────────────────────────────────────────────────────────────── */
