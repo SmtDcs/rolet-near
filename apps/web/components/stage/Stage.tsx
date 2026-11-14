@@ -3,6 +3,7 @@
 import type { PointerEventHandler, ReactNode, RefObject } from "react";
 import type { CharacterKind, RivalClipId } from "@/lib/stage/assets";
 import type { GunPose, GunPoseId } from "@/lib/stage/gunPoses";
+import { AmbientLayer } from "./ambient/AmbientLayer";
 import { BackgroundLayer } from "./layers/BackgroundLayer";
 import { FxLayer } from "./layers/FxLayer";
 import { HudLayer } from "./layers/HudLayer";
@@ -95,6 +96,9 @@ export function Stage({
 
         {/* L2: Foreground table plate */}
         <TableLayer />
+        <div className="pointer-events-none absolute inset-0 z-[25]">
+          <AmbientLayer />
+        </div>
 
         {/* L3: Tabletop sprites (8 chambers, 4+4 items, HP tubes, score notches) */}
         <TableSpritesLayer
