@@ -12,7 +12,7 @@ Rolet started as a Solana/MagicBlock game. **This repository is its port to NEAR
 
 **Disclosure (port of an existing project).** Rolet was first written for Solana with Anchor and a MagicBlock ephemeral rollup. That earlier work ends at commit `d78452f` (26 Oct 2026) and is tagged **`pre-hackathon`**. It is baseline and is **not** part of this submission.
 
-Everything after that tag is the NEAR work done during the hackathon (14–15 Nov 2026) and is what should be judged:
+Everything after that tag is the NEAR work done during the hackathon (14 Nov 2026 UTC; commit times in the log are UTC+3) and is what should be judged:
 
 - **Hackathon diff:** https://github.com/SmtDcs/rolet-near/compare/pre-hackathon...hackathon-submission
 - Tags: `pre-hackathon` = baseline, `hackathon-submission` = the submitted commit.
@@ -45,7 +45,7 @@ What the hackathon work contains:
 
 Contract: [`rolet.rolet-hk-o2611150055.testnet`](https://testnet.nearblocks.io/address/rolet.rolet-hk-o2611150055.testnet). It was built from `contracts/rolet-near` in this repository and initialised with `init-config.json`.
 
-On 2026-11-15, two fresh testnet accounts played one full match against it (match id `1794693498`, player A won 2–1). Every game transaction (`join`, `reveal`, all 31 `fire` calls) was signed with a **function-call access key** that can only call the Rolet contract. No full-access key was used during play.
+On 2026-11-14 (UTC), two fresh testnet accounts played one full match against it (match id `1794693498`, player A won 2–1). Every game transaction (`join`, `reveal`, all 31 `fire` calls) was signed with a **function-call access key** that can only call the Rolet contract. No full-access key was used during play.
 
 | Step | Transaction |
 |---|---|
@@ -137,7 +137,7 @@ pnpm --filter web test
 pnpm --filter web exec tsc --noEmit
 ```
 
-Result on the submitted commit: `117` tests, `117` passed, `0` failed. `tsc --noEmit` exits `0`.
+Result on the submitted commit: `122` tests, `122` passed, `0` failed. `tsc --noEmit` exits `0`.
 
 ### 4. Deploy your own copy to testnet (optional, needs funded testnet accounts)
 
