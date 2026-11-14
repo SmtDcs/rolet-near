@@ -51,6 +51,26 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | @near-js/providers | **2.5.1** | https://www.npmjs.com/package/@near-js/providers |
 | near-api-js (şemsiye paket) | **7.5.3** (`engines: node >= 22.22.2` — ölçülen node 24.22.2 uyumlu) | https://www.npmjs.com/package/near-api-js · https://docs.near.org/build/front-end/near-api-js/quick-reference |
 
+## Gaz ölçümleri (`VALUES-FIX-05` / `FIX-16`, sandbox 2026-11-14)
+
+`tests/integration.rs` sandbox testlerinde (`near-workspaces 0.24.0`, VALUES varsayılanlarıyla: her round `start_hp = 4`, `items_per_load = 4`, `max_items = 4`, `load_size = 8`, `reward = 0.1 NEAR`) ölçülen `total_gas_burnt` değerleri:
+
+| İşlem / Dal | Ölçülen gaz | Not |
+|---|---|---|
+| `buy_character` | **2.792 Tgas** (`2_791_741_322_790`) | Mint + %5/%95 bölüşüm + metadata |
+| `join` | **3.094 Tgas** | Token kilitleme + maç kaydı + top-100 leaderboard |
+| `cancel` | **3.0 Tgas** | Maç silme + durability/treasury iadesi |
+| `reveal` (1. oyuncu) | **2.257 Tgas** | Commit doğrulama + sır kaydı |
+| `reveal` (2. oyuncu, R1 4+4 eşya) | **2.822 Tgas** | Seed türetimi + R1 yükleme + 4+4 eşya |
+| `use_item` (9 eşyanın en pahalısı) | **2.635 Tgas** | Loupe, Pipe, Flask, Shackle, Hacksaw, Ticker, Magnet, Tincture, Lockpick |
+| `fire` (normal atış max) | **3.010 Tgas** | Lazy draw + sıra/durum güncellemesi |
+| `fire` (R2 reload 4+4 eşya) | **3.253 Tgas** | Round geçişi + R2 yükleme + 4+4 eşya dağıtımı |
+| `fire` (maç sonu + transfer) | **4.423 Tgas** | `RoundEnded` + `MatchEnded` + budama + ödül transferi (`Promise`) |
+| `claim_timeout` (`Revealing`) | **4.1 Tgas** | Reveal timeout + silme + iade/ceza |
+| `claim_timeout` (`Active`) | **4.2 Tgas** | Turn timeout + `finish_match` + ödül transferi |
+
+- **Güvenlik payı (`MIN_ACTION_GAS`):** Kontrat eşiği `10 Tgas`. Ölçülen en pahalı aksiyon dalı (`4.423 Tgas`) eşik altında **2.26×** güvenlik payına sahiptir (`4.423 × 2 = 8.846 Tgas <= 10 Tgas`).
+
 ## Notlar
 
 - Cüzdan entegrasyon rehberi: https://docs.near.org/tools/wallet-selector (T-201 spike sonucu `docs/near/WALLETS.md`'ye yazılacak).

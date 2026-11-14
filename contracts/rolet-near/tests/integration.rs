@@ -8,21 +8,89 @@ use near_sdk::json_types::{Base64VecU8, U64};
 use near_sdk::serde_json::json;
 use near_workspaces::types::{Gas as WsGas, NearToken as WsNearToken};
 use rolet_near::config::Config;
-use rolet_near::game::{Action, Target};
-use rolet_near::matches::{PlayerState, Status, MIN_ACTION_GAS};
+use rolet_near::game::{Action, GameState, Item, Target};
+use rolet_near::matches::{PlayerState, Status, MIN_ACTION_GAS, TIMEOUT_GRACE_MS};
 use rolet_near::nft::{CharacterState, Kind};
 use rolet_near::views::{LeaderboardEntry, MatchView};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+fn assert_wasm_fresh(wasm_path: &Path) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let wasm_mtime = std::fs::metadata(wasm_path)
+        .and_then(|m| m.modified())
+        .expect("rolet_near.wasm mtime okunabilmeli");
+    // `cargo near build` ikili baytlar aynı kaldığında `target/near/rolet_near.wasm`
+    // mtime'ını korumuş olabilir; bu nedenle release wasm mtime'ı da dikkate alınır.
+    let release_wasm = manifest_dir.join("target/wasm32-unknown-unknown/release/rolet_near.wasm");
+    let effective_mtime = std::fs::metadata(&release_wasm)
+        .and_then(|m| m.modified())
+        .map(|rm| wasm_mtime.max(rm))
+        .unwrap_or(wasm_mtime);
+
+    let mut paths = vec![manifest_dir.join("Cargo.toml")];
+    if let Ok(entries) = std::fs::read_dir(manifest_dir.join("src")) {
+        for entry in entries.flatten() {
+            if entry.path().extension().and_then(|s| s.to_str()) == Some("rs") {
+                paths.push(entry.path());
+            }
+        }
+    }
+    for src in paths {
+        if let Ok(meta) = std::fs::metadata(&src) {
+            if let Ok(src_mtime) = meta.modified() {
+                assert!(
+                    effective_mtime >= src_mtime,
+                    "WASM bayatladı: {} ({:?}) > derlenmiş wasm ({:?}). Önce `cargo near build non-reproducible-wasm` çalıştırın.",
+                    src.display(),
+                    src_mtime,
+                    effective_mtime
+                );
+            }
+        }
+    }
+}
+
 fn load_wasm() -> Vec<u8> {
     let wasm_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/near/rolet_near.wasm");
+    assert_wasm_fresh(&wasm_path);
     std::fs::read(&wasm_path).unwrap_or_else(|e| {
         panic!(
-            "WASM bulunamadı ({}): {e}. Önce `cargo near build non-reproducible-wasm --no-abi` çalıştırın.",
+            "WASM bulunamadı ({}): {e}. Önce `cargo near build non-reproducible-wasm` çalıştırın.",
             wasm_path.display()
         )
     })
+}
+
+async fn assert_sandbox_solvent(
+    contract: &near_workspaces::Contract,
+    expected_ops_yocto: u128,
+    extra_owed_yocto: u128,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let acc = contract.view_account().await?;
+    let treasury: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
+    let stake_yocto = (acc.storage_usage as u128) * 10_000_000_000_000_000_000u128;
+    let free_yocto = acc.balance.as_yoctonear().saturating_sub(stake_yocto);
+    let liability_yocto = treasury.as_yoctonear() + expected_ops_yocto + extra_owed_yocto;
+    assert!(
+        free_yocto >= liability_yocto,
+        "sandbox solventlik ihlali: free={free_yocto}, treasury+ops+owed={liability_yocto}"
+    );
+    Ok(())
+}
+
+async fn fast_forward_until_ms(
+    worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
+    target_ms: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for _ in 0..40 {
+        let now_ms = worker.view_block().await?.timestamp() / 1_000_000;
+        if now_ms >= target_ms {
+            return Ok(());
+        }
+        worker.fast_forward(25).await?;
+    }
+    panic!("sandbox bloğu hedef zamana ({target_ms} ms) ilerletilemedi");
 }
 
 fn compute_commitment(secret: [u8; 32], account: &str, match_id: u64) -> Base64VecU8 {
@@ -729,6 +797,496 @@ async fn fix13_nft_transfer_call_refunds_on_receiver_request() -> Result<(), Box
         .await?
         .json()?;
     assert_eq!(tok_after_accept["owner_id"], receiver.id().as_str());
+
+    Ok(())
+}
+
+fn can_use_item_without_steal(game: &GameState, actor: usize, item: Item) -> bool {
+    match item {
+        Item::Loupe | Item::Flask | Item::Magnet => !game.load.is_empty(),
+        Item::Ticker => true,
+        Item::Pipe => !game.heal_cut[actor] && game.hp[actor] < game.max_hp,
+        Item::Tincture => !game.heal_cut[actor],
+        Item::Shackle => game.shackled != Some((1 - actor) as u8) && !game.shackle_broke_this_turn,
+        Item::Hacksaw => !game.saw_active,
+        Item::Lockpick => false,
+    }
+}
+
+fn find_steal_slot(game: &GameState, actor: usize) -> Option<u8> {
+    let opp = 1 - actor;
+    for (idx, &opp_item) in game.items[opp].iter().enumerate() {
+        if opp_item != Item::Lockpick && can_use_item_without_steal(game, actor, opp_item) {
+            return Some(idx as u8);
+        }
+    }
+    None
+}
+
+/// FIX-16: sandbox'ta `cancel` ve iki aşamalı `claim_timeout` (`Revealing` ve
+/// `Active + TIMEOUT_GRACE_MS`) akışları + bakiye değişmezi doğrulaması.
+#[tokio::test]
+async fn fix16_cancel_and_claim_timeout_both_stages() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+    let owner = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let contract = worker.dev_deploy(&wasm).await?;
+
+    contract
+        .call("new")
+        .args_json(json!({ "owner": owner.id(), "config": Config::default() }))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(2))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let alice_token: String = alice
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    let bob_token: String = bob
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Ayarci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    let expected_ops = near_sdk::NearToken::from_millinear(100).as_yoctonear();
+    assert_sandbox_solvent(&contract, expected_ops, 0).await?;
+
+    // 1. join -> cancel: maç silinir, durability + treasury geri döner.
+    let treasury_before_cancel: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
+    alice
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(101),
+            "opponent": bob.id(),
+            "commit": compute_commitment([0x10u8; 32], alice.id().as_str(), 101),
+            "token_id": alice_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    let cancel_res = alice
+        .call(contract.id(), "cancel")
+        .args_json(json!({ "match_id": U64(101) }))
+        .transact()
+        .await?
+        .into_result()?;
+    println!("GAS cancel = {} gas", cancel_res.total_gas_burnt);
+    let cancelled_mv: Option<MatchView> = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(101) }))
+        .await?
+        .json()?;
+    assert!(cancelled_mv.is_none());
+    let alice_ch: CharacterState = contract
+        .view("get_character")
+        .args_json(json!({ "token_id": alice_token }))
+        .await?
+        .json::<Option<CharacterState>>()?
+        .unwrap();
+    assert_eq!(alice_ch.durability, 10);
+    assert_eq!(alice_ch.locked_in, None);
+    let treasury_after_cancel: near_sdk::NearToken = contract.view("get_treasury").await?.json()?;
+    assert_eq!(treasury_after_cancel, treasury_before_cancel);
+    assert_sandbox_solvent(&contract, expected_ops, 0).await?;
+
+    // 2. Revealing timeout: yalnız Alice açar → reveal_deadline_ms sonrası Alice iade alır, Bob kaybeder.
+    alice
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(102),
+            "opponent": bob.id(),
+            "commit": compute_commitment([0x11u8; 32], alice.id().as_str(), 102),
+            "token_id": alice_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    bob.call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(102),
+            "opponent": alice.id(),
+            "commit": compute_commitment([0x22u8; 32], bob.id().as_str(), 102),
+            "token_id": bob_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    alice
+        .call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(102),
+            "secret": Base64VecU8([0x11u8; 32].to_vec()),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let mv_rev: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(102) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    fast_forward_until_ms(&worker, mv_rev.reveal_deadline_ms + 500).await?;
+
+    let rev_to_res = alice
+        .call(contract.id(), "claim_timeout")
+        .args_json(json!({ "match_id": U64(102) }))
+        .transact()
+        .await?
+        .into_result()?;
+    println!("GAS claim_timeout(Revealing) = {} gas", rev_to_res.total_gas_burnt);
+    let mv_rev_after: Option<MatchView> = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(102) }))
+        .await?
+        .json()?;
+    assert!(mv_rev_after.is_none());
+    let alice_ch2: CharacterState = contract
+        .view("get_character")
+        .args_json(json!({ "token_id": alice_token }))
+        .await?
+        .json::<Option<CharacterState>>()?
+        .unwrap();
+    let bob_ch2: CharacterState = contract
+        .view("get_character")
+        .args_json(json!({ "token_id": bob_token }))
+        .await?
+        .json::<Option<CharacterState>>()?
+        .unwrap();
+    assert_eq!(alice_ch2.durability, 10);
+    assert_eq!(bob_ch2.durability, 9);
+    assert_sandbox_solvent(&contract, expected_ops, 0).await?;
+
+    // 3. Active timeout (+ TIMEOUT_GRACE_MS): süre+grace sonrası bekleyen taraf kazanır ve ödül alır.
+    alice
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(103),
+            "opponent": bob.id(),
+            "commit": compute_commitment([0x33u8; 32], alice.id().as_str(), 103),
+            "token_id": alice_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    bob.call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(103),
+            "opponent": alice.id(),
+            "commit": compute_commitment([0x44u8; 32], bob.id().as_str(), 103),
+            "token_id": bob_token,
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    alice
+        .call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(103),
+            "secret": Base64VecU8([0x33u8; 32].to_vec()),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+    bob.call(contract.id(), "reveal")
+        .args_json(json!({
+            "match_id": U64(103),
+            "secret": Base64VecU8([0x44u8; 32].to_vec()),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let mv_act: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(103) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    let waiter = if mv_act.game.turn == 0 { &bob } else { &alice };
+    let waiter_idx = 1 - mv_act.game.turn;
+
+    // Deadline öncesinde reddedilmeli.
+    let early = waiter
+        .call(contract.id(), "claim_timeout")
+        .args_json(json!({ "match_id": U64(103) }))
+        .transact()
+        .await?;
+    assert!(early.is_failure(), "erken claim_timeout başarısız olmalı");
+
+    fast_forward_until_ms(&worker, mv_act.deadline_ms + TIMEOUT_GRACE_MS + 500).await?;
+    let act_to_res = waiter
+        .call(contract.id(), "claim_timeout")
+        .args_json(json!({ "match_id": U64(103) }))
+        .transact()
+        .await?
+        .into_result()?;
+    println!("GAS claim_timeout(Active) = {} gas", act_to_res.total_gas_burnt);
+    let mv_done: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(103) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    assert_eq!(mv_done.status, Status::Finished);
+    assert_eq!(mv_done.winner, Some(waiter_idx));
+    assert_sandbox_solvent(&contract, expected_ops, 0).await?;
+
+    Ok(())
+}
+
+/// FIX-16 + VALUES-FIX-05: 9 eşyanın tamamını sandbox'ta `use_item` ile doğrular,
+/// VALUES (R1 4+4, R2 reload 4+4, maç sonu + transfer) gaz tüketimlerini ölçer ve
+/// `MIN_ACTION_GAS` güvenlik payını teyit eder.
+#[tokio::test]
+async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std::error::Error>> {
+    let wasm = load_wasm();
+    let worker = near_workspaces::sandbox().await?;
+    let owner = worker.dev_create_account().await?;
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let contract = worker.dev_deploy(&wasm).await?;
+
+    contract
+        .call("new")
+        .args_json(json!({ "owner": owner.id(), "config": Config::default() }))
+        .transact()
+        .await?
+        .into_result()?;
+    owner
+        .call(contract.id(), "fund_treasury")
+        .deposit(WsNearToken::from_near(5))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let buy_a = alice
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Kuleci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let buy_gas = buy_a.total_gas_burnt.as_gas();
+    let mut alice_token: String = buy_a.json()?;
+    let mut bob_token: String = bob
+        .call(contract.id(), "buy_character")
+        .args_json(json!({ "kind": Kind::Ayarci }))
+        .deposit(WsNearToken::from_near(1))
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    let mut expected_ops = near_sdk::NearToken::from_millinear(100).as_yoctonear();
+
+    let mut used_items: Vec<Item> = Vec::new();
+    let mut max_join_gas = 0u64;
+    let mut max_reveal1_gas = 0u64;
+    let mut max_reveal2_gas = 0u64;
+    let mut max_fire_gas = 0u64;
+    let mut max_r2_reload_gas = 0u64;
+    let mut max_match_end_gas = 0u64;
+    let mut max_use_item_gas = 0u64;
+
+    for m_idx in 0..12u64 {
+        if used_items.len() == 9 && max_r2_reload_gas > 0 && max_match_end_gas > 0 {
+            break;
+        }
+        // Dayanıklılık bittiyse yeniden karakter al.
+        let ch_a: CharacterState = contract
+            .view("get_character")
+            .args_json(json!({ "token_id": alice_token }))
+            .await?
+            .json::<Option<CharacterState>>()?
+            .unwrap();
+        if ch_a.durability == 0 {
+            alice_token = alice
+                .call(contract.id(), "buy_character")
+                .args_json(json!({ "kind": Kind::Kuleci }))
+                .deposit(WsNearToken::from_near(1))
+                .transact()
+                .await?
+                .into_result()?
+                .json()?;
+            bob_token = bob
+                .call(contract.id(), "buy_character")
+                .args_json(json!({ "kind": Kind::Ayarci }))
+                .deposit(WsNearToken::from_near(1))
+                .transact()
+                .await?
+                .into_result()?
+                .json()?;
+            expected_ops += near_sdk::NearToken::from_millinear(100).as_yoctonear();
+        }
+
+        let match_id = 200 + m_idx;
+        let sa = [(0x50 + m_idx as u8); 32];
+        let sb = [(0x80 + m_idx as u8); 32];
+        let j1 = alice
+            .call(contract.id(), "join")
+            .args_json(json!({
+                "match_id": U64(match_id),
+                "opponent": bob.id(),
+                "commit": compute_commitment(sa, alice.id().as_str(), match_id),
+                "token_id": alice_token,
+            }))
+            .transact()
+            .await?
+            .into_result()?;
+        max_join_gas = max_join_gas.max(j1.total_gas_burnt.as_gas());
+        let j2 = bob
+            .call(contract.id(), "join")
+            .args_json(json!({
+                "match_id": U64(match_id),
+                "opponent": alice.id(),
+                "commit": compute_commitment(sb, bob.id().as_str(), match_id),
+                "token_id": bob_token,
+            }))
+            .transact()
+            .await?
+            .into_result()?;
+        max_join_gas = max_join_gas.max(j2.total_gas_burnt.as_gas());
+
+        let r1 = alice
+            .call(contract.id(), "reveal")
+            .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(sa.to_vec()) }))
+            .transact()
+            .await?
+            .into_result()?;
+        max_reveal1_gas = max_reveal1_gas.max(r1.total_gas_burnt.as_gas());
+        let r2 = bob
+            .call(contract.id(), "reveal")
+            .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(sb.to_vec()) }))
+            .transact()
+            .await?
+            .into_result()?;
+        max_reveal2_gas = max_reveal2_gas.max(r2.total_gas_burnt.as_gas());
+
+        let mut mv: MatchView = contract
+            .view("get_match")
+            .args_json(json!({ "match_id": U64(match_id) }))
+            .await?
+            .json::<Option<MatchView>>()?
+            .unwrap();
+        assert_eq!(mv.game.items[0].len(), 4);
+        assert_eq!(mv.game.items[1].len(), 4);
+
+        let mut steps = 0u32;
+        while mv.status == Status::Active {
+            steps += 1;
+            assert!(steps <= 160);
+            let turn = mv.game.turn as usize;
+            let actor = if turn == 0 { &alice } else { &bob };
+
+            // Henüz test edilmemiş kullanılabilir eşya varsa onu kullan.
+            let mut chosen: Option<(u8, Option<u8>, Item)> = None;
+            for (idx, &it) in mv.game.items[turn].iter().enumerate() {
+                if used_items.contains(&it) {
+                    continue;
+                }
+                if it == Item::Lockpick {
+                    if let Some(steal) = find_steal_slot(&mv.game, turn) {
+                        chosen = Some((idx as u8, Some(steal), it));
+                        break;
+                    }
+                } else if can_use_item_without_steal(&mv.game, turn, it) {
+                    chosen = Some((idx as u8, None, it));
+                    break;
+                }
+            }
+
+            if let Some((slot, steal_slot, item)) = chosen {
+                let res = actor
+                    .call(contract.id(), "use_item")
+                    .args_json(json!({
+                        "match_id": U64(match_id),
+                        "slot": slot,
+                        "steal_slot": steal_slot,
+                    }))
+                    .transact()
+                    .await?
+                    .into_result()?;
+                let g = res.total_gas_burnt.as_gas();
+                assert!(g < MIN_ACTION_GAS.as_gas(), "use_item({item:?}) gazı MIN_ACTION_GAS'ı aştı: {g}");
+                max_use_item_gas = max_use_item_gas.max(g);
+                if !used_items.contains(&item) {
+                    used_items.push(item);
+                }
+            } else {
+                let res = actor
+                    .call(contract.id(), "fire")
+                    .args_json(json!({
+                        "match_id": U64(match_id),
+                        "target": Target::Opponent,
+                    }))
+                    .transact()
+                    .await?
+                    .into_result()?;
+                let g = res.total_gas_burnt.as_gas();
+                assert!(g < MIN_ACTION_GAS.as_gas(), "fire gazı MIN_ACTION_GAS'ı aştı: {g}");
+                let actions: Vec<Action> = res.json()?;
+                if actions.iter().any(|a| matches!(a, Action::MatchEnded { .. })) {
+                    max_match_end_gas = max_match_end_gas.max(g);
+                } else if actions.iter().any(|a| matches!(a, Action::RoundEnded { .. }))
+                    && actions.iter().any(|a| matches!(a, Action::LoadStarted { .. }))
+                {
+                    max_r2_reload_gas = max_r2_reload_gas.max(g);
+                } else {
+                    max_fire_gas = max_fire_gas.max(g);
+                }
+            }
+
+            mv = contract
+                .view("get_match")
+                .args_json(json!({ "match_id": U64(match_id) }))
+                .await?
+                .json::<Option<MatchView>>()?
+                .unwrap();
+        }
+        assert_sandbox_solvent(&contract, expected_ops, 0).await?;
+    }
+
+    assert_eq!(used_items.len(), 9, "tüm 9 eşya kullanılmalı, görülenler: {used_items:?}");
+    assert!(max_r2_reload_gas > 0, "R2 reload (4+4 eşya) gözlenmeli");
+    assert!(max_match_end_gas > 0, "maç sonu + transfer gözlenmeli");
+
+    let tgas = |g: u64| g as f64 / 1e12;
+    println!("=== VALUES-FIX-05 / FIX-16 GAS SUMMARY (MIN_ACTION_GAS = {} Tgas) ===", MIN_ACTION_GAS.as_tgas());
+    println!("buy_character        : {:.3} Tgas ({buy_gas})", tgas(buy_gas));
+    println!("join                 : {:.3} Tgas ({max_join_gas})", tgas(max_join_gas));
+    println!("reveal (1st)         : {:.3} Tgas ({max_reveal1_gas})", tgas(max_reveal1_gas));
+    println!("reveal (2nd, R1 4+4) : {:.3} Tgas ({max_reveal2_gas})", tgas(max_reveal2_gas));
+    println!("use_item (max)       : {:.3} Tgas ({max_use_item_gas})", tgas(max_use_item_gas));
+    println!("fire (normal max)    : {:.3} Tgas ({max_fire_gas})", tgas(max_fire_gas));
+    println!("fire (R2 reload 4+4) : {:.3} Tgas ({max_r2_reload_gas})", tgas(max_r2_reload_gas));
+    println!("fire (match_end+xfer): {:.3} Tgas ({max_match_end_gas})", tgas(max_match_end_gas));
+
+    let worst = max_reveal2_gas
+        .max(max_use_item_gas)
+        .max(max_fire_gas)
+        .max(max_r2_reload_gas)
+        .max(max_match_end_gas);
+    assert!(
+        worst * 2 <= MIN_ACTION_GAS.as_gas(),
+        "VALUES en kötü dal ({worst}) >= MIN_ACTION_GAS / 2 ({})",
+        MIN_ACTION_GAS.as_gas() / 2
+    );
 
     Ok(())
 }
