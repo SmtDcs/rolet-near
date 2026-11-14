@@ -45,14 +45,7 @@ export function HudLayer({
   return (
     <div data-testid="hud-layer" className="pointer-events-none absolute inset-0 z-[60] flex flex-col justify-between p-3 sm:p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="font-mono text-[10px] tracking-[0.3em] uppercase">
-          {visual.phase === "finished" ? null : isYourTurn ? (
-            <span className="text-[#f2c46a]/80">Your turn</span>
-          ) : (
-            <span className="text-[#e04545]/70">Rival&apos;s turn</span>
-          )}
-          <span className="ml-3 text-[#6b6354]">Round {visual.round}</span>
-        </div>
+        <div />
 
         <div className="pointer-events-auto flex items-center gap-3">
           {hud.canClaimTimeout && hud.onClaimTimeout && (
@@ -86,6 +79,16 @@ export function HudLayer({
           </button>
         </div>
       </div>
+
+      {visual.phase !== "finished" && (
+        <div
+          data-testid="turn-status"
+          className="pointer-events-none absolute top-[66%] right-[2%] -translate-y-1/2 border border-[#e9dcc0]/70 bg-[#14110d]/90 px-3 py-1.5 font-serif text-[clamp(9px,1vw,14px)] font-bold tracking-[0.18em] whitespace-nowrap uppercase shadow-[0_4px_8px_rgba(0,0,0,0.5)]"
+          style={{ color: isYourTurn ? "#e5c378" : "#c4553f" }}
+        >
+          {isYourTurn ? "Your turn" : "Rival&apos;s turn"}
+        </div>
+      )}
 
       {/* Aim overlay: soft glows toward top (rival) / bottom (you) */}
       {aiming && (

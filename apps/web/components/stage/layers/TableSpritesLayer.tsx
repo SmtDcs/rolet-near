@@ -1,28 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Item, Shell } from "@/lib/nearTypes";
 import type { StageVisualState } from "../types";
 import { ItemIcon } from "./ItemIcons";
 
 /** Layout anchors (fractions of the 16:9 stage). */
-const RIVAL_AVATAR = { x: 0.15, y: 0.15 };
-const LOCAL_HP_ANCHOR = { x: 0.16, y: 0.86 };
-const CHAMBER_ANCHOR = { x: 0.29, y: 0.47 };
-const DECK_ANCHOR = { x: 0.7, y: 0.47 };
+const CHAMBER_ANCHOR = { x: 0.69, y: 0.47 };
+const DECK_ANCHOR = { x: 0.88, y: 0.47 };
 const SCORE_NOTCH_ANCHOR = { x: 0.5, y: 0.34 };
 /** Fanned hands; rotation in degrees. */
 const RIVAL_ITEM_SLOTS = [
-  { x: 0.4, y: 0.12, rot: 6 },
-  { x: 0.467, y: 0.115, rot: 2 },
-  { x: 0.533, y: 0.115, rot: -2 },
-  { x: 0.6, y: 0.12, rot: -6 },
+  { x: 0.4, y: 0.015, rot: 8 },
+  { x: 0.467, y: 0.0, rot: 3 },
+  { x: 0.533, y: 0.0, rot: -3 },
+  { x: 0.6, y: 0.015, rot: -8 },
 ] as const;
 const LOCAL_ITEM_SLOTS = [
-  { x: 0.38, y: 0.83, rot: -8 },
-  { x: 0.46, y: 0.82, rot: -3 },
-  { x: 0.54, y: 0.82, rot: 3 },
-  { x: 0.62, y: 0.83, rot: 8 },
+  { x: 0.38, y: 0.97, rot: -8 },
+  { x: 0.46, y: 0.955, rot: -3 },
+  { x: 0.54, y: 0.955, rot: 3 },
+  { x: 0.62, y: 0.97, rot: 8 },
 ] as const;
 
 export interface TableSpritesLayerProps {
@@ -60,7 +58,7 @@ function ItemCard({ item, dim = false }: { item: Item; dim?: boolean }) {
   const art = ITEM_ART[item];
   return (
     <span
-      className={`relative block w-full shadow-[0_6px_10px_rgba(0,0,0,0.55)] ${dim ? "opacity-60" : ""}`}
+      className={`relative block w-full drop-shadow-[0_6px_8px_rgba(0,0,0,0.5)] ${dim ? "opacity-60" : ""}`}
       style={{ aspectRatio: "321 / 480", containerType: "inline-size" }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -93,79 +91,88 @@ function ItemCard({ item, dim = false }: { item: Item; dim?: boolean }) {
 
 const POP_CSS =
   "@keyframes rolet-hp-pop{0%{transform:scale(1.7);filter:brightness(1.6) saturate(2)}60%{transform:scale(.85)}100%{transform:scale(1)}}" +
+  "@keyframes rolet-hp-hit{0%{transform:scale(1.35);background:#8a1c1c;color:#fff}100%{transform:scale(1)}}" +
   "@keyframes rolet-turn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(229,195,120,.0)}50%{box-shadow:0 0 14px 4px rgba(229,195,120,.7)}}";
 
-function Heart({ on, cut, pop, color }: { on: boolean; cut: boolean; pop: boolean; color: string }) {
+function HeartGlyph() {
   return (
-    <svg
-      viewBox="0 0 24 22"
-      className="h-full w-full"
-      style={pop ? { animation: "rolet-hp-pop 0.5s ease-out" } : undefined}
-    >
+    <svg viewBox="0 0 24 22" className="h-[0.9em] w-[0.9em]" aria-hidden="true">
       <path
         d="M12 21C5 15.5 1.5 12 1.5 7.6 1.5 4.4 4 2 7 2c2 0 3.8 1 5 2.8C13.2 3 15 2 17 2c3 0 5.5 2.4 5.5 5.6C22.5 12 19 15.5 12 21z"
-        fill={on ? (cut ? "#e61919" : color) : "rgba(10,8,6,0.55)"}
-        stroke={on ? "#2a0f0a" : "#3a3228"}
-        strokeWidth="1.4"
-        style={on ? { filter: `drop-shadow(0 2px 2px rgba(0,0,0,0.6))` } : undefined}
+        fill="#c4553f"
       />
-      {on && <ellipse cx="7.5" cy="7" rx="2.2" ry="1.3" fill="rgba(255,255,255,0.5)" transform="rotate(-30 7.5 7)" />}
     </svg>
   );
 }
 
-/** HP hearts + best-of-3 round pips. */
-function HpTokens({
+/** KARDS-style identity block: square portrait, name, numbered HP badge + round pips. */
+function Identity({
   label,
+  name,
   hp,
-  maxHp,
   healCut,
   wins,
-  tone,
+  active,
+  portrait,
 }: {
   label: string;
+  name: string;
   hp: number;
-  maxHp: number;
   healCut: boolean;
   wins: number;
-  tone: "warm" | "red";
+  active: boolean;
+  portrait: ReactNode;
 }) {
-  const lit = tone === "warm" ? "#e8b44a" : "#d93b3b";
   const [prev, setPrev] = useState(hp);
-  const [pop, setPop] = useState({ lo: 0, hi: 0, k: 0 });
+  const [hit, setHit] = useState(0);
   if (hp !== prev) {
     setPrev(hp);
-    if (hp < prev) setPop({ lo: hp, hi: prev, k: pop.k + 1 });
+    if (hp < prev) setHit(hit + 1);
   }
   return (
     <div className="pointer-events-none flex flex-col items-start gap-1.5">
-      <div className="flex gap-1.5">
-        {Array.from({ length: maxHp }, (_, i) => {
-          const on = i < hp;
-          const popped = i >= pop.lo && i < pop.hi && pop.k > 0;
-          return (
-            <div
-              key={`${i}-${popped ? pop.k : 0}`}
-              className="h-[clamp(14px,2.4vw,34px)] w-[clamp(14px,2.4vw,34px)]"
-              title={`${label} HP ${i + 1}`}
-            >
-              <Heart on={on} cut={on && healCut && i === 0} pop={popped} color={lit} />
-            </div>
-          );
-        })}
+      <div className="flex items-center gap-2">
+        <div
+          className="aspect-square overflow-hidden border border-[#c9a24d] bg-[#1a1511] shadow-[0_4px_8px_rgba(0,0,0,0.5)]"
+          style={{
+            width: "clamp(40px,5vw,76px)",
+            animation: active ? "rolet-turn-pulse 1.6s ease-in-out infinite" : "none",
+          }}
+        >
+          {portrait}
+        </div>
+        <span className="font-serif text-[clamp(9px,1vw,14px)] font-bold tracking-[0.14em] whitespace-nowrap text-[#e9dcc0] [text-shadow:0_1px_3px_#000]">
+          {name}
+        </span>
       </div>
-      <div className="flex gap-1.5" title={`${label} rounds won: ${wins}/2`}>
-        {[0, 1].map((n) => (
-          <span
-            key={n}
-            className="block h-1.5 w-1.5 rotate-45 rounded-[1px]"
-            style={{
-              background: n < wins ? "#e5c378" : "rgba(10,8,6,0.55)",
-              boxShadow: n < wins ? "0 0 6px rgba(229,195,120,0.8)" : "none",
-              border: "1px solid #4a3a20",
-            }}
-          />
-        ))}
+      <div className="flex items-center gap-2">
+        <div
+          key={hit}
+          data-testid={`hp-badge-${label.toLowerCase()}`}
+          role="img"
+          aria-label={`${label} HP ${hp}`}
+          title={`${label} HP ${hp}${healCut ? " (heal cut)" : ""}`}
+          className="flex items-center gap-1 border border-[#3a3026] bg-[#14110d]/90 px-2 py-0.5 font-serif text-[clamp(16px,2.2vw,32px)] leading-none font-bold shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
+          style={{
+            color: healCut ? "#e61919" : "#efe3c6",
+            animation: hit > 0 ? "rolet-hp-hit 0.7s ease-out" : undefined,
+          }}
+        >
+          {hp}
+          <span className="text-[0.45em]"><HeartGlyph /></span>
+        </div>
+        <div className="flex gap-1.5" title={`${label} rounds won: ${wins}/2`}>
+          {[0, 1].map((n) => (
+            <span
+              key={n}
+              className="block h-1.5 w-1.5 rotate-45 rounded-[1px]"
+              style={{
+                background: n < wins ? "#c9a24d" : "rgba(10,8,6,0.55)",
+                border: "1px solid #4a3a20",
+              }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -236,38 +243,31 @@ export function TableSpritesLayer({
   const pickingSteal = lockpickSlot !== null;
   const active = visual.phase === "active";
   const rivalTurn = active && visual.turn === opp;
+  const [hoverSlot, setHoverSlot] = useState<number | null>(null);
+  const hoverItem = hoverSlot !== null ? localItems[hoverSlot] : undefined;
 
   return (
     <div data-testid="table-sprites-layer" className="pointer-events-none absolute inset-0 z-30">
       <style>{POP_CSS}</style>
 
-      {/* Rival: round avatar with gold ring + HP */}
-      <div
-        className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-3"
-        style={{ left: `${RIVAL_AVATAR.x * 100}%`, top: `${RIVAL_AVATAR.y * 100}%` }}
-      >
-        <div
-          className="aspect-square overflow-hidden rounded-full border-[3px] border-[#d4a84b] bg-[#14110d] shadow-[0_4px_10px_rgba(0,0,0,0.6)]"
-          style={{
-            width: "clamp(36px,5.2vw,80px)",
-            animation: rivalTurn ? "rolet-turn-pulse 1.6s ease-in-out infinite" : "none",
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/art/2d/dealer-face.png"
-            alt="Dealer"
-            draggable={false}
-            className="h-full w-full select-none object-cover"
-          />
-        </div>
-        <HpTokens
+      {/* Rival identity: top-left */}
+      <div className="absolute" style={{ left: "1.5%", top: "2.5%" }}>
+        <Identity
           label="RIVAL"
+          name="THE DEALER"
           hp={visual.hp[opp]}
-          maxHp={visual.maxHp}
           healCut={visual.healCut[opp]}
           wins={visual.score[opp]}
-          tone="red"
+          active={rivalTurn}
+          portrait={
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/art/2d/dealer-face.png"
+              alt="Dealer"
+              draggable={false}
+              className="h-full w-full select-none object-cover brightness-125"
+            />
+          }
         />
       </div>
 
@@ -313,20 +313,36 @@ export function TableSpritesLayer({
         </div>
       )}
 
-      {/* Player HP */}
-      <div
-        className="absolute -translate-x-1/2 -translate-y-1/2"
-        style={{ left: `${LOCAL_HP_ANCHOR.x * 100}%`, top: `${LOCAL_HP_ANCHOR.y * 100}%` }}
-      >
-        <HpTokens
+      {/* Player identity: bottom-left */}
+      <div className="absolute" style={{ left: "1.5%", bottom: "2.5%" }}>
+        <Identity
           label="YOU"
+          name="YOU"
           hp={visual.hp[you]}
-          maxHp={visual.maxHp}
           healCut={visual.healCut[you]}
           wins={visual.score[you]}
-          tone="warm"
+          active={active && visual.turn === you}
+          portrait={
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-b from-[#3a3026] to-[#1a1511] font-serif text-[clamp(18px,2.4vw,36px)] font-bold text-[#c9a24d]">
+              Y
+            </div>
+          }
         />
       </div>
+
+      {/* Enlarged hover preview of the hovered hand card */}
+      {hoverItem && (
+        <div
+          data-testid="card-preview"
+          className="absolute flex -translate-y-1/2 flex-col items-center gap-1.5"
+          style={{ left: "2%", top: "50%", width: "16%" }}
+        >
+          <ItemCard item={hoverItem} />
+          <span className="font-serif text-[clamp(10px,1.1vw,16px)] font-bold tracking-[0.14em] text-[#e9dcc0] uppercase [text-shadow:0_1px_3px_#000]">
+            {ITEM_NAMES[hoverItem]}
+          </span>
+        </div>
+      )}
 
       {/* Rival items: face-down cards along the top edge */}
       {RIVAL_ITEM_SLOTS.map((pos, idx) => {
@@ -359,7 +375,7 @@ export function TableSpritesLayer({
                 src="/art/2d/card-back.png"
                 alt=""
                 draggable={false}
-                className="block w-full select-none drop-shadow-[0_4px_5px_rgba(0,0,0,0.6)]"
+                className="block w-full select-none drop-shadow-[0_6px_8px_rgba(0,0,0,0.5)]"
               />
             ) : (
               <span className="h-1.5 w-1.5 rounded-full bg-black/40" />
@@ -393,12 +409,16 @@ export function TableSpritesLayer({
               transform: `translate(-50%, -50%) rotate(${pos.rot}deg)`,
             }}
             title={item ? `Use ${ITEM_NAMES[item]}` : "Empty slot"}
+            onMouseEnter={() => usable && setHoverSlot(idx)}
+            onMouseLeave={() => setHoverSlot((h) => (h === idx ? null : h))}
+            onFocus={() => usable && setHoverSlot(idx)}
+            onBlur={() => setHoverSlot((h) => (h === idx ? null : h))}
           >
             {item ? (
               <span
                 className={`flex w-full transition duration-200 ${
-                  usable ? "group-hover:-translate-y-4 group-hover:scale-105" : ""
-                } ${selected ? "-translate-y-4 drop-shadow-[0_0_12px_rgba(229,195,120,0.9)]" : ""} ${
+                  usable ? "group-hover:-translate-y-[42%] group-hover:scale-105" : ""
+                } ${selected ? "-translate-y-[42%] drop-shadow-[0_0_12px_rgba(229,195,120,0.9)]" : ""} ${
                   usable && !selected ? "drop-shadow-[0_0_8px_rgba(242,196,106,0.35)]" : ""
                 }`}
               >
