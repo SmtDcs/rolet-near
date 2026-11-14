@@ -155,7 +155,7 @@ test("F3-7 intentFlow: emits 4s filler beat, times out at 20s with rollback, ign
   await clock.advance(1);
   const stall = beats.find((b) => b.id === "tension_stall");
   assert.ok(stall);
-  assert.equal(stall.params?.caption, "mekanizma takıldı");
+  assert.equal(stall.params?.caption, "mechanism jammed");
   assert.equal(failed.length, 0);
 
   await clock.advance(15999);

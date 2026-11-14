@@ -850,7 +850,7 @@ export function useDirector({
         }
 
         case "rollback_gun": {
-          const reason = typeof p.reason === "string" ? p.reason : "Hamle iptal edildi";
+          const reason = typeof p.reason === "string" ? p.reason : "Move cancelled";
           commitVisual((prev) => ({
             ...prev,
             gunHolder: "table",

@@ -275,7 +275,7 @@ export function TableSpritesLayer({
                 : "pointer-events-none"
             }`}
             style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
-            title={item ? `${ITEM_NAMES[item]} kullan` : "Empty slot"}
+            title={item ? `Use ${ITEM_NAMES[item]}` : "Empty slot"}
           >
             {item ? (
               <>

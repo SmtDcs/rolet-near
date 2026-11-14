@@ -174,7 +174,7 @@ export class IntentFlow {
           createBeat("tension_stall", {
             isLocal: true,
             intentId: intent.id,
-            caption: "mekanizma takıldı",
+            caption: "mechanism jammed",
           }),
         );
       }
