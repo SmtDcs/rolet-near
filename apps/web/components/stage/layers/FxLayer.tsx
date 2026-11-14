@@ -11,12 +11,15 @@ export interface FxLayerProps {
 /**
  * L5: Lighting pool sway, muzzle flash, self-hit white->black->recover blackout, and tension vignette.
  */
+const HIT_FLASH_CSS = "@keyframes rolet-hit-flash{0%{opacity:1}100%{opacity:0}}";
+
 export function FxLayer({ fx, aim, paused = false }: FxLayerProps) {
   const selfTension = aim < -0.6 ? Math.min(1, (-aim - 0.6) / 0.4) : 0;
   const vignetteOpacity = 0.45 + selfTension * 0.42;
 
   return (
     <div data-testid="fx-layer" className="pointer-events-none absolute inset-0 z-50 overflow-hidden">
+      <style>{HIT_FLASH_CSS}</style>
       {/* Swinging lamp light cone & pool */}
       <div
         className="absolute inset-0 mix-blend-screen"
@@ -38,6 +41,17 @@ export function FxLayer({ fx, aim, paused = false }: FxLayerProps) {
               : "radial-gradient(ellipse at center, transparent 48%, rgba(0, 0, 0, 0.85) 100%)",
         }}
       />
+
+      {/* Red hit flash on heavy impacts */}
+      {fx.shake === "heavy" && (
+        <div
+          className="absolute inset-0"
+          style={{
+            background: "radial-gradient(ellipse at center, rgba(200,20,20,0.25) 0%, rgba(160,0,0,0.55) 100%)",
+            animation: paused ? "none" : "rolet-hit-flash 0.45s ease-out forwards",
+          }}
+        />
+      )}
 
       {/* Muzzle flash */}
       {fx.muzzleFlash && (

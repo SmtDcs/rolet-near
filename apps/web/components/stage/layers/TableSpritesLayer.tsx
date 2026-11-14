@@ -1,16 +1,26 @@
 "use client";
 
 import type { Item, Shell } from "@/lib/nearTypes";
-import {
-  LOCAL_HP_ANCHOR,
-  LOCAL_ITEM_SLOTS,
-  RIVAL_HP_ANCHOR,
-  RIVAL_ITEM_SLOTS,
-  SCORE_NOTCH_ANCHOR,
-  SHELL_RACK_ANCHOR,
-} from "@/lib/stage/layout";
 import type { StageVisualState } from "../types";
 import { ItemIcon } from "./ItemIcons";
+
+/** Anchors aligned to the felt in /art/scene.webp (felt spans x 5-95%, y 71-93%). */
+const RIVAL_HP_ANCHOR = { x: 0.09, y: 0.8 };
+const LOCAL_HP_ANCHOR = { x: 0.91, y: 0.8 };
+const SHELL_RACK_ANCHOR = { x: 0.5, y: 0.8 };
+const SCORE_NOTCH_ANCHOR = { x: 0.5, y: 0.73 };
+const RIVAL_ITEM_SLOTS = [
+  { x: 0.17, y: 0.76 },
+  { x: 0.3, y: 0.76 },
+  { x: 0.7, y: 0.76 },
+  { x: 0.83, y: 0.76 },
+] as const;
+const LOCAL_ITEM_SLOTS = [
+  { x: 0.17, y: 0.88 },
+  { x: 0.3, y: 0.88 },
+  { x: 0.7, y: 0.88 },
+  { x: 0.83, y: 0.88 },
+] as const;
 
 export interface TableSpritesLayerProps {
   visual: StageVisualState;
@@ -169,7 +179,7 @@ export function TableSpritesLayer({
     <div data-testid="table-sprites-layer" className="pointer-events-none absolute inset-0 z-30">
       {/* Table lighting: warm pool on your side, red cast on the rival's */}
       <div
-        className="absolute inset-x-0 bottom-0 h-[48%] transition-opacity duration-700"
+        className="absolute inset-x-0 bottom-0 h-[34%] transition-opacity duration-700"
         style={{
           opacity: yourTurn ? 1 : 0,
           background:
@@ -177,7 +187,7 @@ export function TableSpritesLayer({
         }}
       />
       <div
-        className="absolute inset-x-0 top-[40%] h-[22%] transition-opacity duration-700"
+        className="absolute inset-x-0 top-[66%] h-[16%] transition-opacity duration-700"
         style={{
           opacity: rivalTurn ? 1 : 0,
           background:
@@ -236,7 +246,7 @@ export function TableSpritesLayer({
             onClick={() => {
               if (stealable) onSelectStealSlot?.(idx);
             }}
-            className={`absolute flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition ${
+            className={`absolute flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition ${
               stealable
                 ? "pointer-events-auto cursor-pointer drop-shadow-[0_0_10px_rgba(229,195,120,0.9)] hover:scale-110"
                 : "pointer-events-none"
@@ -247,7 +257,7 @@ export function TableSpritesLayer({
             {item ? (
               <ItemIcon
                 item={item}
-                className="h-10 w-10 -rotate-6 opacity-85 drop-shadow-[0_5px_4px_rgba(0,0,0,0.85)]"
+                className="h-16 w-16 -rotate-6 opacity-90"
               />
             ) : (
               <span className="h-1.5 w-1.5 rounded-full bg-[#2a241c]" />
@@ -269,7 +279,7 @@ export function TableSpritesLayer({
             onClick={() => {
               if (usable) onUseItem?.(idx);
             }}
-            className={`absolute flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition duration-200 ${
+            className={`absolute flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition duration-200 ${
               usable
                 ? "pointer-events-auto cursor-pointer hover:-translate-y-[60%] hover:scale-110"
                 : "pointer-events-none"
@@ -289,7 +299,7 @@ export function TableSpritesLayer({
                 )}
                 <ItemIcon
                   item={item}
-                  className={`relative h-14 w-14 rotate-3 drop-shadow-[0_6px_5px_rgba(0,0,0,0.85)] ${
+                  className={`relative h-20 w-20 rotate-3 ${
                     usable || selected ? "" : "opacity-60"
                   }`}
                 />
