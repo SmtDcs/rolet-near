@@ -60,7 +60,7 @@ pub enum Target {
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug,
 )]
-#[serde(crate = "near_sdk::serde")]
+#[serde(crate = "near_sdk::serde", tag = "kind")]
 pub enum ItemResult {
     /// Gösterilecek sonuç yok (Shackle, Hacksaw, Magnet, Lockpick).
     None,
@@ -123,11 +123,12 @@ pub struct GameState {
     pub saw_active: bool,
 }
 
-/// İstemci animasyon kuyruğu aksiyonları (DESIGN §4.8).
+/// İstemci animasyon kuyruğu aksiyonları (DESIGN §4.8). JSON'da iç etiket
+/// (`kind`) ile serileşir; NEP-297 `data` payload'ı da bu formattır (T-114).
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, PartialEq, Eq, Debug,
 )]
-#[serde(crate = "near_sdk::serde")]
+#[serde(crate = "near_sdk::serde", tag = "kind")]
 pub enum Action {
     LoadStarted { live: u8, blank: u8, total: u8 },
     ItemsDealt { player: u8, items: Vec<Item> },
@@ -137,8 +138,9 @@ pub enum Action {
     TurnSkipped { player: u8 },
     HealCut,
     RoundEnded { winner: u8, score: [u8; 2] },
-    /// `reward` yoctoNEAR cinsindendir.
-    MatchEnded { winner: u8, reward: u128 },
+    /// `reward` yoctoNEAR cinsindendir; `U128` JSON'da string serileşir
+    /// (serde_json u128 sayı aralığını aşamaz, NEAR miktarları string taşır).
+    MatchEnded { winner: u8, reward: near_sdk::json_types::U128 },
     TimeoutClaimed { by: u8 },
 }
 
@@ -426,7 +428,7 @@ fn apply_damage(
     state.score[winner as usize] += 1;
     actions.push(Action::RoundEnded { winner, score: state.score });
     if state.score[winner as usize] >= 2 {
-        actions.push(Action::MatchEnded { winner, reward: cfg.reward.as_yoctonear() });
+        actions.push(Action::MatchEnded { winner, reward: cfg.reward.as_yoctonear().into() });
         return Some(winner);
     }
     // Skorlar 2'nin altında olduğundan en fazla 2 round oynanmıştır;
@@ -1145,7 +1147,7 @@ mod tests {
                 Action::Shot { player: 0, target: Target::Opponent, shell: Shell::Live, damage: 1 },
                 Action::Ejected { shell: Shell::Live },
                 Action::RoundEnded { winner: 0, score: [2, 0] },
-                Action::MatchEnded { winner: 0, reward: cfg.reward.as_yoctonear() },
+                Action::MatchEnded { winner: 0, reward: cfg.reward.as_yoctonear().into() },
             ]
         );
         assert_eq!(st.round, 2);
