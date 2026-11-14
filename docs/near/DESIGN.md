@@ -88,7 +88,7 @@ Sonradan eklenenler ("Double or Nothing" güncellemesi):
 | Kullan-at telefon | Gelecekteki rastgele bir fişeğin sırasını ve türünü kullanana söyler ("3. fişek… dolu"). Tek fişek kaldıysa bilgi vermez. **[EMİN DEĞİLİM: mevcut fişeği hariç tutuyor mu — muhtemelen evet]** |
 | İnverter | **Mevcut fişeğin** kutbunu çevirir (dolu↔boş). Açıklanan sayılar güncellenmez. |
 | Adrenalin | Rakibin bir eşyasını çalar ve **hemen kullanır**. Adrenalin çalınamaz. Seçim için süre sınırı var. **[EMİN DEĞİLİM: süre]** |
-| Son kullanma tarihi geçmiş ilaç | Şans: %40–50 ihtimalle +2 can, aksi halde −1 can (öldürebilir). **[EMİN DEĞİLİM: oran]** |
+| Son kullanma tarihi geçmiş ilaç | Şans: %50 ihtimalle +2 can, aksi halde −1 can (öldürebilir). |
 
 ### 2.5 Round'a özel kurallar
 - **Round 1:** eşya yok, düşük can, saf şans + boşla-kendine-ateş kararı.
@@ -131,7 +131,7 @@ Parametreler (kontrat sabitleri, ayarlanabilir; Buckshot'tan teyide göre günce
 |---|---|---|---|
 | 1 | 2 | 0 | yok |
 | 2 | 4 | 2 | yok |
-| 3 | 5 | 4 | can ≤ 2 olunca iyileşme kapalı |
+| 3 | 6 | 4 | can ≤ 2 olunca iyileşme kapalı |
 
 - Eşya slotu: oyuncu başına 8. Dolu slot varsa dağıtımda fazla eşya düşer.
 - Fişek yüklemesi: toplam 2–8, dolu ∈ [1, toplam−1], dağılım ortaya yakın (§4.6'da algoritma).

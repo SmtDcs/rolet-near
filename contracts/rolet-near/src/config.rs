@@ -59,7 +59,7 @@ impl Default for Config {
             rounds: vec![
                 RoundConfig { start_hp: 2, items_per_load: 0, heal_cut_at: None },
                 RoundConfig { start_hp: 4, items_per_load: 2, heal_cut_at: None },
-                RoundConfig { start_hp: 5, items_per_load: 4, heal_cut_at: Some(2) },
+                RoundConfig { start_hp: 6, items_per_load: 4, heal_cut_at: Some(2) },
             ],
             turn_ms: 45_000,
             reveal_ms: 60_000,
@@ -68,7 +68,7 @@ impl Default for Config {
             ops_bps: 500,
             durability: 10,
             allowance_hint: NearToken::from_millinear(500),
-            tincture_good_pct: 40,
+            tincture_good_pct: 50,
             max_items: 8,
             min_treasury: NearToken::from_millinear(100),
         }
@@ -150,7 +150,7 @@ mod tests {
         );
         assert_eq!(
             c.rounds[2],
-            RoundConfig { start_hp: 5, items_per_load: 4, heal_cut_at: Some(2) }
+            RoundConfig { start_hp: 6, items_per_load: 4, heal_cut_at: Some(2) }
         );
         assert_eq!(c.turn_ms, 45_000);
         assert_eq!(c.reveal_ms, 60_000);
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(c.ops_bps, 500);
         assert_eq!(c.durability, 10);
         assert_eq!(c.allowance_hint, NearToken::from_millinear(500));
-        assert_eq!(c.tincture_good_pct, 40);
+        assert_eq!(c.tincture_good_pct, 50);
         assert_eq!(c.max_items, 8);
         assert_eq!(c.min_treasury, NearToken::from_millinear(100));
     }

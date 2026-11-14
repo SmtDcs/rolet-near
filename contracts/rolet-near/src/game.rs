@@ -769,7 +769,7 @@ mod tests {
             round: 3,
             score: [1, 0],
             hp: [4, 2],
-            max_hp: 5,
+            max_hp: 6,
             heal_cut: [false, true],
             items: [vec![Item::Pipe, Item::Magnet], vec![]],
             load: sample_load(),
@@ -1499,7 +1499,7 @@ mod tests {
             actions[0],
             Action::Shot { player: 0, target: Target::SelfTarget, shell: Shell::Blank, damage: 0 }
         );
-        assert_eq!(st.hp, [5, 5]);
+        assert_eq!(st.hp, [6, 6]);
         assert_eq!(st.turn, 0);
     }
 
@@ -1636,7 +1636,7 @@ mod tests {
         // İyi yol maksimumu aşamaz.
         let mut src2 = ScriptedSource::with_rolls(vec![], vec![10]);
         let mut st2 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
-        st2.hp = [4, 4];
+        st2.hp = [5, 5];
         let actions2 = use_at(&mut st2, 0, &mut src2).unwrap();
         assert_eq!(
             actions2[0],
@@ -1647,9 +1647,9 @@ mod tests {
                 result: ItemResult::Healed { amount: 1 },
             }
         );
-        assert_eq!(st2.hp, [5, 4]);
+        assert_eq!(st2.hp, [6, 5]);
         // Kötü yol: -1 can, R3 eşiğine (2) düşünce HealCut.
-        let mut src3 = ScriptedSource::with_rolls(vec![], vec![40]);
+        let mut src3 = ScriptedSource::with_rolls(vec![], vec![50]);
         let mut st3 = item_state(3, Load::new(1, 1), vec![Item::Tincture]);
         st3.hp = [3, 3];
         let actions3 = use_at(&mut st3, 0, &mut src3).unwrap();
