@@ -22,9 +22,9 @@ use near_sdk::{env, near, require, AccountId, Gas, NearToken, Promise};
 pub const LOG_CAP: usize = 32;
 
 /// S-01: rastgele çekiliş içeren metodlar (`reveal`, `fire`, `use_item`) için
-/// minimum ön ödemeli gaz eşiği. Sandbox'ta ölçülen en pahalı dal
-/// için >2× güvenlik payı olarak 10 Tgas seçilmiştir.
-pub const MIN_ACTION_GAS: Gas = Gas::from_tgas(10);
+/// minimum ön ödemeli gaz eşiği. Dolu leaderboard kovma dalı dahil en pahalı
+/// dal için ≥2× güvenlik payı olarak 15 Tgas seçilmiştir (FIX-F2B-1).
+pub const MIN_ACTION_GAS: Gas = Gas::from_tgas(15);
 
 /// S-15 / FIX-F2-8: son saniye `reveal`/`fire`/`claim_timeout` yarışını önlemek için ek süre (ms).
 pub const TIMEOUT_GRACE_MS: u64 = 2_000;

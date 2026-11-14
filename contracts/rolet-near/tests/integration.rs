@@ -101,6 +101,10 @@ async fn fast_forward_until_ms(
     panic!("sandbox bloğu hedef zamana ({target_ms} ms) ilerletilemedi");
 }
 
+fn min_action_gas() -> WsGas {
+    WsGas::from_tgas(MIN_ACTION_GAS.as_tgas())
+}
+
 fn compute_commitment(secret: [u8; 32], account: &str, match_id: u64) -> Base64VecU8 {
     let mut hasher = Sha256::new();
     hasher.update(secret);
@@ -194,6 +198,7 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
             "match_id": U64(match_id),
             "secret": Base64VecU8(secret_a.to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -203,6 +208,7 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
             "match_id": U64(match_id),
             "secret": Base64VecU8(secret_b.to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -235,6 +241,7 @@ async fn full_match_sandbox_integration() -> Result<(), Box<dyn std::error::Erro
                 "match_id": U64(match_id),
                 "target": Target::Opponent,
             }))
+            .gas(min_action_gas())
             .transact()
             .await?
             .into_result()?;
@@ -602,6 +609,7 @@ async fn fix04_low_balance_match_finishes_and_credits_owed() -> Result<(), Box<d
             "match_id": U64(match_id),
             "secret": Base64VecU8(secret_a.to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -611,6 +619,7 @@ async fn fix04_low_balance_match_finishes_and_credits_owed() -> Result<(), Box<d
             "match_id": U64(match_id),
             "secret": Base64VecU8(secret_b.to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -633,6 +642,7 @@ async fn fix04_low_balance_match_finishes_and_credits_owed() -> Result<(), Box<d
                 "match_id": U64(match_id),
                 "target": Target::Opponent,
             }))
+            .gas(min_action_gas())
             .transact()
             .await?
             .into_result()?;
@@ -944,6 +954,7 @@ async fn fix16_cancel_and_claim_timeout_both_stages() -> Result<(), Box<dyn std:
             "match_id": U64(102),
             "secret": Base64VecU8([0x11u8; 32].to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -1024,6 +1035,7 @@ async fn fix16_cancel_and_claim_timeout_both_stages() -> Result<(), Box<dyn std:
             "match_id": U64(103),
             "secret": Base64VecU8([0x33u8; 32].to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -1032,6 +1044,7 @@ async fn fix16_cancel_and_claim_timeout_both_stages() -> Result<(), Box<dyn std:
             "match_id": U64(103),
             "secret": Base64VecU8([0x44u8; 32].to_vec()),
         }))
+        .gas(min_action_gas())
         .transact()
         .await?
         .into_result()?;
@@ -1189,6 +1202,7 @@ async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std:
         let r1 = alice
             .call(contract.id(), "reveal")
             .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(sa.to_vec()) }))
+            .gas(min_action_gas())
             .transact()
             .await?
             .into_result()?;
@@ -1196,6 +1210,7 @@ async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std:
         let r2 = bob
             .call(contract.id(), "reveal")
             .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(sb.to_vec()) }))
+            .gas(min_action_gas())
             .transact()
             .await?
             .into_result()?;
@@ -1242,6 +1257,7 @@ async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std:
                         "slot": slot,
                         "steal_slot": steal_slot,
                     }))
+                    .gas(min_action_gas())
                     .transact()
                     .await?
                     .into_result()?;
@@ -1258,6 +1274,7 @@ async fn fix16_use_all_items_and_measure_values_gas() -> Result<(), Box<dyn std:
                         "match_id": U64(match_id),
                         "target": Target::Opponent,
                     }))
+                    .gas(min_action_gas())
                     .transact()
                     .await?
                     .into_result()?;
@@ -1772,8 +1789,72 @@ async fn fix_f2_4_migrate_is_private_and_preserves_state() -> Result<(), Box<dyn
     Ok(())
 }
 
-/// FIX-F2-6: 100 girişli (64 karakterlik hesap adlı) dolu leaderboard ile
-/// `join` ve `fire` (normal + maç sonu) gaz ölçümü ve `MIN_ACTION_GAS` ≥2× payı doğrulaması.
+/// FIX-F2-6 / FIX-F2B-1: 100 girişli (64 karakterlik hesap adlı) dolu leaderboard ile
+/// `join`, `reveal` ve `fire` (yerinde güncelleme + kovma dalı) gaz ölçümü ve
+/// `MIN_ACTION_GAS` ≥2× payı doğrulaması.
+async fn play_full_match_gas(
+    contract: &near_workspaces::Contract,
+    match_id: u64,
+    p_a: &near_workspaces::Account,
+    p_b: &near_workspaces::Account,
+    secret_a: [u8; 32],
+    secret_b: [u8; 32],
+) -> Result<(u64, u64, u64, u8), Box<dyn std::error::Error>> {
+    let ra = p_a
+        .call(contract.id(), "reveal")
+        .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(secret_a.to_vec()) }))
+        .gas(min_action_gas())
+        .transact()
+        .await?
+        .into_result()?;
+    let rb = p_b
+        .call(contract.id(), "reveal")
+        .args_json(json!({ "match_id": U64(match_id), "secret": Base64VecU8(secret_b.to_vec()) }))
+        .gas(min_action_gas())
+        .transact()
+        .await?
+        .into_result()?;
+    let max_reveal_gas = ra.total_gas_burnt.as_gas().max(rb.total_gas_burnt.as_gas());
+
+    let mut mv: MatchView = contract
+        .view("get_match")
+        .args_json(json!({ "match_id": U64(match_id) }))
+        .await?
+        .json::<Option<MatchView>>()?
+        .unwrap();
+    let mut max_fire_normal = 0u64;
+    let mut match_end_fire_gas = 0u64;
+    let mut steps = 0u32;
+    while mv.status == Status::Active {
+        steps += 1;
+        assert!(steps <= 160);
+        let actor = if mv.game.turn == 0 { p_a } else { p_b };
+        let res = actor
+            .call(contract.id(), "fire")
+            .args_json(json!({ "match_id": U64(match_id), "target": Target::Opponent }))
+            .gas(min_action_gas())
+            .transact()
+            .await?
+            .into_result()?;
+        let g = res.total_gas_burnt.as_gas();
+        let actions: Vec<Action> = res.json()?;
+        if actions.iter().any(|a| matches!(a, Action::MatchEnded { .. })) {
+            match_end_fire_gas = match_end_fire_gas.max(g);
+        } else {
+            max_fire_normal = max_fire_normal.max(g);
+        }
+        mv = contract
+            .view("get_match")
+            .args_json(json!({ "match_id": U64(match_id) }))
+            .await?
+            .json::<Option<MatchView>>()?
+            .unwrap();
+    }
+    assert!(match_end_fire_gas > 0);
+    let winner = mv.winner.expect("tamamlanan maçta winner olmalı");
+    Ok((max_reveal_gas, max_fire_normal, match_end_fire_gas, winner))
+}
+
 #[tokio::test]
 async fn fix_f2_6_full_100_leaderboard_gas_measurement() -> Result<(), Box<dyn std::error::Error>> {
     let wasm = load_wasm();
@@ -1900,8 +1981,8 @@ async fn fix_f2_6_full_100_leaderboard_gas_measurement() -> Result<(), Box<dyn s
     assert_eq!(lb.len(), 100, "leaderboard 100 girişle dolu olmalı");
     assert!(lb.iter().all(|e| e.account_id.as_str().len() == 64));
 
-    // Dolu (100 girişli) leaderboard varken 101. oyuncunun `join` gazını ölç.
-    let join_full_res = accounts[100]
+    // Dolu (100 girişli) leaderboard varken tabloya girmemiş iki oyuncunun (p100, p101) `join` gazını ölç.
+    let join_full_a_res = accounts[100]
         .call(contract.id(), "join")
         .args_json(json!({
             "match_id": U64(1050),
@@ -1912,76 +1993,81 @@ async fn fix_f2_6_full_100_leaderboard_gas_measurement() -> Result<(), Box<dyn s
         .transact()
         .await?
         .into_result()?;
-    let join_full_gas = join_full_res.total_gas_burnt.as_gas();
-
-    // 50. maçı (match_id = 1049, p098 vs p099) tam oynayarak `fire` normal + maç sonu gazını ölç.
-    let mid = 1049u64;
-    let p_a = &accounts[98];
-    let p_b = &accounts[99];
-    p_a.call(contract.id(), "reveal")
-        .args_json(json!({ "match_id": U64(mid), "secret": Base64VecU8([0x11u8; 32].to_vec()) }))
+    let join_full_gas = join_full_a_res.total_gas_burnt.as_gas();
+    let join_full_b_res = accounts[101]
+        .call(contract.id(), "join")
+        .args_json(json!({
+            "match_id": U64(1050),
+            "opponent": accounts[100].id(),
+            "commit": compute_commitment([0x44u8; 32], accounts[101].id().as_str(), 1050),
+            "token_id": tokens[101],
+        }))
         .transact()
         .await?
         .into_result()?;
-    p_b.call(contract.id(), "reveal")
-        .args_json(json!({ "match_id": U64(mid), "secret": Base64VecU8([0x22u8; 32].to_vec()) }))
-        .transact()
-        .await?
-        .into_result()?;
+    let join_full_b_gas = join_full_b_res.total_gas_burnt.as_gas();
 
-    let mut mv: MatchView = contract
-        .view("get_match")
-        .args_json(json!({ "match_id": U64(mid) }))
-        .await?
-        .json::<Option<MatchView>>()?
-        .unwrap();
-    let mut max_fire_normal = 0u64;
-    let mut match_end_fire_gas = 0u64;
-    let mut steps = 0u32;
-    while mv.status == Status::Active {
-        steps += 1;
-        assert!(steps <= 160);
-        let actor = if mv.game.turn == 0 { p_a } else { p_b };
-        let res = actor
-            .call(contract.id(), "fire")
-            .args_json(json!({ "match_id": U64(mid), "target": Target::Opponent }))
-            .transact()
-            .await?
-            .into_result()?;
-        let g = res.total_gas_burnt.as_gas();
-        let actions: Vec<Action> = res.json()?;
-        if actions.iter().any(|a| matches!(a, Action::MatchEnded { .. })) {
-            match_end_fire_gas = match_end_fire_gas.max(g);
-        } else {
-            max_fire_normal = max_fire_normal.max(g);
-        }
-        mv = contract
-            .view("get_match")
-            .args_json(json!({ "match_id": U64(mid) }))
-            .await?
-            .json::<Option<MatchView>>()?
-            .unwrap();
-    }
-    assert!(match_end_fire_gas > 0);
-    let lb_after: Vec<LeaderboardEntry> = contract
+    let lb_pre: Vec<LeaderboardEntry> = contract
         .view("leaderboard")
-        .args_json(json!({ "from": 0, "limit": 10 }))
+        .args_json(json!({ "from": 0, "limit": 100 }))
         .await?
         .json()?;
-    assert_eq!(lb_after[0].wins, 1);
+    assert!(
+        !lb_pre
+            .iter()
+            .any(|e| e.account_id == *accounts[100].id() || e.account_id == *accounts[101].id()),
+        "p100 ve p101 join sonrası tabloya girmemiş olmalı"
+    );
 
-    let worst = join_99_gas
-        .max(join_100_gas)
-        .max(join_full_gas)
+    // 1) Tablo içindeki iki oyuncu (match_id = 1049, p098 vs p099) -> yerinde güncelleme dalı.
+    let (reveal_in_table, fire_normal_in_table, match_end_in_table_gas, winner_1049) =
+        play_full_match_gas(&contract, 1049, &accounts[98], &accounts[99], [0x11u8; 32], [0x22u8; 32]).await?;
+    let loser_1049_id = if winner_1049 == 0 {
+        accounts[99].id()
+    } else {
+        accounts[98].id()
+    };
+
+    // 2) Tabloya girmemiş iki oyuncu (match_id = 1050, p100 vs p101) -> kazanan (1-0) dolu tablodan (0-1) kuyruğu kovar.
+    let (reveal_evict, fire_normal_evict, match_end_evict_gas, winner_1050) =
+        play_full_match_gas(&contract, 1050, &accounts[100], &accounts[101], [0x33u8; 32], [0x44u8; 32]).await?;
+    let winner_1050_id = if winner_1050 == 0 {
+        accounts[100].id()
+    } else {
+        accounts[101].id()
+    };
+
+    let lb_after: Vec<LeaderboardEntry> = contract
+        .view("leaderboard")
+        .args_json(json!({ "from": 0, "limit": 100 }))
+        .await?
+        .json()?;
+    assert_eq!(lb_after.len(), 100, "kovma sonrası leaderboard 100 giriş kalmalı");
+    assert_eq!(lb_after[0].wins, 1);
+    assert!(
+        lb_after.iter().any(|e| e.account_id == *winner_1050_id && e.wins == 1),
+        "tabloya girmemiş kazanan ({winner_1050_id}) kovma sonrası tabloda olmalı"
+    );
+    assert!(
+        !lb_after.iter().any(|e| e.account_id == *loser_1049_id),
+        "0-1 kuyruğundaki ({loser_1049_id}) kovulmuş olmalı"
+    );
+
+    let max_reveal_gas = reveal_in_table.max(reveal_evict);
+    let max_fire_normal = fire_normal_in_table.max(fire_normal_evict);
+    // `join` MIN_ACTION_GAS ile kapılı değildir; `worst` yalnızca MIN_ACTION_GAS aranan dalları kapsar.
+    let worst = max_reveal_gas
         .max(max_fire_normal)
-        .max(match_end_fire_gas);
+        .max(match_end_in_table_gas)
+        .max(match_end_evict_gas);
     println!(
-        "FULL_LB_GAS join_99={join_99_gas} join_100={join_100_gas} join_full={join_full_gas} \
-         fire_normal_max={max_fire_normal} fire_match_end={match_end_fire_gas}"
+        "FULL_LB_GAS join_99={join_99_gas} join_100={join_100_gas} join_full={join_full_gas} join_full_b={join_full_b_gas} \
+         reveal_max={max_reveal_gas} fire_normal_max={max_fire_normal} \
+         fire_match_end_in_table={match_end_in_table_gas} fire_match_end_evict={match_end_evict_gas}"
     );
     assert!(
         worst * 2 <= MIN_ACTION_GAS.as_gas(),
-        "dolu leaderboard en kötü gaz ({worst}) >= MIN_ACTION_GAS / 2 ({})",
+        "dolu leaderboard (kovma dahil) en kötü aksiyon gazı ({worst}) >= MIN_ACTION_GAS / 2 ({})",
         MIN_ACTION_GAS.as_gas() / 2
     );
     assert_sandbox_solvent(&contract, expected_ops, 0).await?;

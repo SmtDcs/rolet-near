@@ -67,11 +67,12 @@ Sürüm çakışması yaşanırsa: `rustup update stable`.
 | `fire` (maç sonu + transfer) | **4.423 Tgas** | `RoundEnded` + `MatchEnded` + budama + ödül transferi (`Promise`) |
 | `claim_timeout` (`Revealing`) | **4.1 Tgas** | Reveal timeout + silme + iade/ceza |
 | `claim_timeout` (`Active`) | **4.2 Tgas** | Turn timeout + `finish_match` + ödül transferi |
-| `join` (dolu top-100, 64B hesap adları) | **3.686 Tgas** (100. giriş) / **3.271 Tgas** (100+ dolu) | `top_scores` (`LazyOption`, <1 KB) + `top_slots`/`top_slot_of` (FIX-F2-6) |
+| `join` (dolu top-100, 64B hesap adları) | **3.688 Tgas** (100. giriş) / **3.398 Tgas** (100+ dolu) | `top_scores` (`LazyOption`, <1 KB) + `top_slots`/`top_slot_of` (FIX-F2-6 / FIX-F2B-1) |
 | `fire` (normal atış, dolu top-100) | **3.227 Tgas** | `top_scores` kökten ayrı olduğu için normal `fire` etkilenmez (FIX-F2-6) |
-| `fire` (maç sonu + transfer, dolu 100×64B) | **4.964 Tgas** (`4_963_631_872_004`) | `finish_match` + tek `top_scores` toplu güncellemesi (`update_leaderboard_batch`) |
+| `fire` (maç sonu + transfer, dolu 100×64B, yerinde güncelleme) | **4.959 Tgas** (`4_958_835_378_846`) | `finish_match` + `update_leaderboard_batch` mevcut üye güncellemesi (FIX-F2-6) |
+| `fire` (maç sonu + transfer, dolu 100×64B, kovma dalı) | **5.296 Tgas** (`5_296_380_675_734`) | Tabloya girmemiş kazananın `(0, 1)` kuyruğunu kovduğu `update_leaderboard_batch` dalı (FIX-F2B-1) |
 
-- **Güvenlik payı (`MIN_ACTION_GAS`):** Kontrat eşiği `10 Tgas`. Boş listede en pahalı dal `4.423 Tgas` (**2.26×** pay); 100 girişli (64 karakterlik hesap adlı) dolu leaderboard ile ölçülen en pahalı dal (`4.964 Tgas`) ise eşik altında **2.01×** güvenlik payına sahiptir (`4.964 × 2 = 9.927 Tgas <= 10 Tgas`).
+- **Güvenlik payı (`MIN_ACTION_GAS`):** Kontrat eşiği `15 Tgas` (FIX-F2B-1). Boş listede en pahalı dal `4.423 Tgas` (**3.39×** pay); 100 girişli (64 karakterlik hesap adlı) dolu leaderboard'da yerinde güncelleme `4.959 Tgas` (**3.02×** pay), kovma dalı dahil en pahalı dal (`5.296 Tgas`) ise **2.83×** güvenlik payına sahiptir (`5.296 × 2 = 10.593 Tgas <= 15 Tgas`).
 
 ## Notlar
 
