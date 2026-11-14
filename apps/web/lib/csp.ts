@@ -61,7 +61,7 @@ export function buildCspHeader(options: CspOptions): string {
     scriptSrc.push("'unsafe-eval'");
   }
 
-  const connectSet = new Set<string>(["'self'", ...NEAR_CONNECT_ORIGINS]);
+  const connectSet = new Set<string>(["'self'", "blob:", ...NEAR_CONNECT_ORIGINS]);
   for (const url of options.rpcUrls ?? []) {
     const origin = toOrigin(url);
     if (origin) connectSet.add(origin);

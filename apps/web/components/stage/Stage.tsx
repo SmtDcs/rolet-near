@@ -100,6 +100,7 @@ export function Stage({
               alt=""
               draggable={false}
               className="absolute inset-0 h-full w-full select-none object-cover"
+              style={{ imageRendering: "pixelated" }}
             />
             <div
               className="absolute inset-0 mix-blend-screen"
@@ -151,6 +152,15 @@ export function Stage({
         )}
 
         {/* L5: Lighting, muzzle flash, self-hit blackout, vignette */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-[45] opacity-[0.18] mix-blend-multiply"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(0deg, rgba(0,0,0,0.9) 0px, rgba(0,0,0,0.9) 1px, transparent 1px, transparent 3px), radial-gradient(rgba(0,0,0,0.6) 0.5px, transparent 0.6px)",
+            backgroundSize: "100% 3px, 3px 3px",
+          }}
+        />
         <FxLayer fx={fx} aim={hud.aimState.aim} paused={paused} />
 
         {/* L6: React DOM HUD & split-screen aim overlay */}

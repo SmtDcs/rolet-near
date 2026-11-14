@@ -37,9 +37,9 @@ export function RevolverCanvas(props: RevolverModelProps) {
 
   return (
     <Canvas
-      dpr={[1, 1.5]}
+      dpr={0.5}
       frameloop={props.paused ? "never" : "demand"}
-      gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
+      gl={{ alpha: true, antialias: false, powerPreference: "high-performance" }}
       camera={{
         fov: CAMERA_SPEC.fovDeg,
         near: CAMERA_SPEC.near,

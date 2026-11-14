@@ -90,9 +90,9 @@ export const TOTAL_STAGE_BUDGET_BYTES = 20 * MB;
 export const STAGE_ASSETS: Readonly<Record<StageAssetId, StageAssetEntry>> = {
   "G-01": {
     id: "G-01",
-    type: "procedural",
-    proceduralId: "revolver-8-chamber",
-    budgetBytes: 2 * MB,
+    type: "glb",
+    src: "/art/revolver.glb",
+    budgetBytes: Math.ceil(2.6 * MB),
     preloadTier: "initial",
     description: "8-chamber clockwork revolver 3D model",
   },
@@ -116,7 +116,7 @@ export const STAGE_ASSETS: Readonly<Record<StageAssetId, StageAssetEntry>> = {
     id: "V-01",
     type: "procedural",
     proceduralId: "room-ambient-loop",
-    budgetBytes: 3 * MB,
+    budgetBytes: 200 * KB,
     preloadTier: "initial",
     description: "Clocktower workshop ambient room loop",
   },

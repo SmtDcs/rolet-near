@@ -314,7 +314,41 @@ export function RevolverGlbModel({
   const gltf = useGLTF(src, false, true);
   const rootRef = useRef<THREE.Group | null>(null);
 
-  const clonedScene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
+  const clonedScene = useMemo(() => {
+    const inner = gltf.scene.clone(true);
+    // Normalize the Meshy export to the procedural model's frame:
+    // barrel along the z axis, longest side ~0.42 units, centered.
+    const raw = new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3());
+    if (raw.x >= raw.y && raw.x >= raw.z) inner.rotation.y = Math.PI / 2;
+    else if (raw.y >= raw.x && raw.y >= raw.z) inner.rotation.x = Math.PI / 2;
+    const scene = new THREE.Group();
+    scene.add(inner);
+    scene.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const longest = Math.max(size.x, size.y, size.z) || 1;
+    const k = 0.42 / longest;
+    scene.scale.setScalar(k);
+    scene.position.set(-center.x * k, -center.y * k, -center.z * k);
+    // PS1 look: flat shading and nearest-neighbour textures.
+    scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const mat = m as THREE.MeshStandardMaterial;
+        mat.flatShading = true;
+        if (mat.map) {
+          mat.map.magFilter = THREE.NearestFilter;
+          mat.map.minFilter = THREE.NearestFilter;
+          mat.map.needsUpdate = true;
+        }
+        mat.needsUpdate = true;
+      }
+    });
+    return scene;
+  }, [gltf.scene]);
 
   useRevolverDriver(
     rootRef,
