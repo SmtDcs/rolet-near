@@ -1,0 +1,43 @@
+{
+  "final_execution_status": "EXECUTED_OPTIMISTIC",
+  "status": {
+    "SuccessValue": "W3sia2luZCI6IlNob3QiLCJwbGF5ZXIiOjAsInRhcmdldCI6Ik9wcG9uZW50Iiwic2hlbGwiOiJMaXZlIiwiZGFtYWdlIjoxfSx7ImtpbmQiOiJFamVjdGVkIiwic2hlbGwiOiJMaXZlIn1d"
+  },
+  "transaction": {
+    "hash": "8u1firetxhash",
+    "signer_id": "alice.test.near",
+    "receiver_id": "rolet.test.near"
+  },
+  "transaction_outcome": {
+    "id": "8u1firetxhash",
+    "outcome": {
+      "logs": [],
+      "receipt_ids": ["r1"],
+      "gas_burnt": 240000000000,
+      "tokens_burnt": "24000000000000000000",
+      "executor_id": "alice.test.near",
+      "status": { "SuccessReceiptId": "r1" }
+    }
+  },
+  "receipts_outcome": [
+    {
+      "id": "r1",
+      "outcome": {
+        "logs": [
+          "EVENT_JSON:{\"standard\":\"nep171\",\"version\":\"1.0.0\",\"event\":\"nft_transfer\",\"data\":[{\"old_owner_id\":\"a\",\"new_owner_id\":\"b\",\"token_ids\":[\"1\"]}]}"
+          ,
+          "EVENT_JSON:{\"standard\":\"rolet\",\"version\":\"1.0.0\",\"event\":\"shot\",\"data\":[{\"kind\":\"Shot\",\"player\":0,\"target\":\"Opponent\",\"shell\":\"Live\",\"damage\":1}]}"
+          ,
+          "EVENT_JSON:{\"standard\":\"rolet\",\"version\":\"1.0.0\",\"event\":\"ejected\",\"data\":[{\"kind\":\"Ejected\",\"shell\":\"Live\"}]}"
+        ],
+        "receipt_ids": [],
+        "gas_burnt": 3010000000000,
+        "tokens_burnt": "301000000000000000000",
+        "executor_id": "rolet.test.near",
+        "status": {
+          "SuccessValue": "W3sia2luZCI6IlNob3QiLCJwbGF5ZXIiOjAsInRhcmdldCI6Ik9wcG9uZW50Iiwic2hlbGwiOiJMaXZlIiwiZGFtYWdlIjoxfSx7ImtpbmQiOiJFamVjdGVkIiwic2hlbGwiOiJMaXZlIn1d"
+        }
+      }
+    }
+  ]
+}

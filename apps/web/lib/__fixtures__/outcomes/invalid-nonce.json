@@ -1,0 +1,14 @@
+{
+  "name": "HANDLER_ERROR",
+  "cause": {
+    "name": "INVALID_TRANSACTION",
+    "info": {
+      "InvalidTxError": {
+        "InvalidNonce": {
+          "tx_nonce": 5,
+          "ak_nonce": 6
+        }
+      }
+    }
+  }
+}

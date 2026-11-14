@@ -1,0 +1,50 @@
+{
+  "final_execution_status": "EXECUTED_OPTIMISTIC",
+  "status": {
+    "Failure": {
+      "ActionError": {
+        "index": 0,
+        "kind": {
+          "FunctionCallError": {
+            "ExecutionError": "Smart contract panicked: insufficient gas"
+          }
+        }
+      }
+    }
+  },
+  "transaction_outcome": {
+    "id": "panic1",
+    "outcome": {
+      "logs": [],
+      "receipt_ids": ["r1"],
+      "gas_burnt": 240000000000,
+      "tokens_burnt": "0",
+      "executor_id": "alice.test.near",
+      "status": { "SuccessReceiptId": "r1" }
+    }
+  },
+  "receipts_outcome": [
+    {
+      "id": "r1",
+      "outcome": {
+        "logs": [],
+        "receipt_ids": [],
+        "gas_burnt": 1000000000000,
+        "tokens_burnt": "0",
+        "executor_id": "rolet.test.near",
+        "status": {
+          "Failure": {
+            "ActionError": {
+              "index": 0,
+              "kind": {
+                "FunctionCallError": {
+                  "ExecutionError": "Smart contract panicked: insufficient gas"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
