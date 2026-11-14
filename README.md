@@ -1,273 +1,140 @@
-# ROLET
+# Rolet NEAR
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Solana-Devnet-9945FF?logo=solana&logoColor=white" />
-  <img src="https://img.shields.io/badge/Anchor-1.0.2-blue" />
-  <img src="https://img.shields.io/badge/MagicBlock-Ephemeral%20Rollup-6E56CF" />
-  <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white" />
-  <img src="https://img.shields.io/badge/License-MIT-green" />
-</p>
+**A turn-based revolver duel whose match rules run in a NEAR smart contract.**
 
-<p align="center">
-  <strong>Turn-based tactical chamber duel on Solana. Two wallets, one revolver, one vault.</strong><br/>
-  Eight chambers. Twelve tactical cards. Turns settle on an ephemeral rollup.
-</p>
+Two players share one revolver. The contract loads 8 chambers with a random 2–6 live rounds and announces the live count at every load. Each player starts with 4 HP. On your turn you either play an item card or pull the trigger: aim at your opponent, or aim at yourself (a blank on yourself keeps your turn). First to 0 HP loses a round; a match is best of 3 rounds. The winner is paid a reward from the contract's treasury.
 
-<p align="center">
-  <a href="https://github.com/SmtDcs/rolet">GitHub Repository</a> ·
-  <a href="https://web-production-40a6c.up.railway.app">Live Demo (Devnet)</a> ·
-  <a href="https://explorer.solana.com/address/mspQcUFhmAGYUsnBbcUndhaZiris53KtwYCjDHU91oH?cluster=devnet">On-chain Program (devnet)</a>
-</p>
+Rolet started as a Solana/MagicBlock game. **This repository is its port to NEAR, built during NEAR HACKATHON 2026.**
 
 ---
 
-## What is it?
+## NEAR HACKATHON 2026 submission: what was built here
 
-Two players share a revolver loaded with **5 live + 3 blank** rounds across 8 chambers. On each turn a player either plays a tactical card or pulls the trigger. First to 0 HP loses. The winner is paid a fixed SOL reward from an on-chain treasury PDA.
+**Disclosure (port of an existing project).** Rolet was first written for Solana with Anchor and a MagicBlock ephemeral rollup. That earlier work ends at commit `d78452f` (26 Oct 2026) and is tagged **`pre-hackathon`**. It is baseline and is **not** part of this submission.
 
-Twelve cards change the outcome: reveal the next chamber with **HawkEye**, eject it with **BulletExtractor**, shield the next shot with **Blocker**, deal double damage with **DoubleStrike**, and eight more.
+Everything after that tag is the NEAR work done during the hackathon (14–15 Nov 2026) and is what should be judged:
 
-Chambers, cards, hits and payouts are Solana instructions and account state. The only server-side part is the match queue, which introduces two wallets to each other and nothing else.
+- **Hackathon diff:** https://github.com/SmtDcs/rolet-near/compare/pre-hackathon...hackathon-submission
+- Tags: `pre-hackathon` = baseline, `hackathon-submission` = the submitted commit.
 
-**One wallet prompt per player.** A single session transaction funds and registers an ephemeral key; every later step — opening the lobby, revealing, seeding the match, delegating, every turn, and settling — is signed by that key.
+What the hackathon work contains:
+
+1. **`contracts/rolet-near/`, a new NEAR contract (Rust, `near-sdk` 5.30.2).** It was written from scratch and is not a translation of the Anchor program. It contains:
+   - **Match rules on chain** (`src/game.rs`, `src/matches.rs`): loads, firing at yourself or the opponent, 9 item cards, HP, 3-round matches, turn and reveal timeouts (`claim_timeout`).
+   - **Commit-reveal randomness** (`src/rng.rs`): each player commits `sha256(secret ‖ account_id ‖ match_id_le)` in `join`, then reveals. Every random draw is `sha256(match_seed ‖ draw_nonce ‖ env::random_seed())`, so neither player nor the block producer alone picks the seed.
+   - **A shared deck**: 9 item types × 4 copies (`copies_per_item: 4`). Hands hold up to 4 cards (`max_items: 4`).
+   - **Character NFT as entry ticket** (`src/nft.rs`): `buy_character` mints a NEP-171 token (price 1 NEAR in `init-config.json`). The standard `nft_*` methods come from `near-contract-standards`.
+   - **Leaderboard and player stats**: the `leaderboard`, `get_player` and `get_character` views.
+   - **Treasury** (`src/treasury.rs`, `src/nft.rs`): character sales are split 5% ops / 95% treasury. When a match ends, the contract transfers the winner's reward (0.1 NEAR by default) from the treasury. If the treasury is short, the reward is recorded as owed and the winner can collect it later with `claim_reward`.
+   - **NEP-297 events** for every game action (`src/events.rs`, `EVENT_JSON:` logs), plus the `get_actions` view so the client can replay a match.
+   - Owner controls (`set_config`, `pause`/`unpause`, `migrate`) and storage accounting covered by tests.
+2. **Walletless turns with a function-call access key** (`apps/web/lib/nearKey*.ts`, `nearCall.ts`, `nearKeyFlow.ts`). The player signs in once with MyNearWallet or Meteor (`@near-wallet-selector` 10.1.4). The dApp gets a function-call key limited to the Rolet contract, and each turn is signed with that key in the browser, with no wallet pop-up per move. A dev-only page at `/dev/near-key` exercises this flow.
+3. **TypeScript game engine with contract parity** (`apps/web/lib/game/`). This includes rules, a redacted per-player model, an action-log sync, an intent state machine, aim gestures, a bot and a wallet-free practice engine. `contracts/rolet-near/tests/vectors_export.rs` exports test vectors from the Rust contract into `docs/near/schema/vectors.json`, and `lib/game/vectors.test.ts` checks that the TS rules match the contract exactly.
+4. **Testnet scripts**: `contracts/rolet-near/scripts/deploy-testnet.sh` and `cli-match.sh` (a full two-account match from the CLI). Both refuse anything that is not `testnet`.
+
+### Honest status (at submission time)
+
+- ✅ The contract is complete and tested (unit tests + `near-workspaces` sandbox integration tests).
+- ✅ The NEAR client libraries, the function-call key flow and the TS game engine are implemented and tested.
+- ⏳ **No contract is deployed to testnet yet.** The deploy and CLI-match scripts are ready; see "Deploy to testnet" below.
+- ⏳ The new 2.5D game scene (2D animated table and opponent, 3D revolver in Three.js) is in progress: a stage skeleton and clip player are on the dev-only `/dev/stage` page. The UI pages under `apps/web/app` are still mostly the Solana-era UI and are not yet wired to NEAR.
 
 ---
 
-## How a match runs
+## Quick start (reproduce the results)
 
-```
-Player A                                Player B
-────────                                ────────
-/profile  → take a character           /profile  → take a character
-/duel     → FIND MATCH                  /duel     → FIND MATCH
-  └─ each wallet signs one queue message
-  └─ the server names one of them host
-                            ▼
-  session transaction (1 prompt): fund a fresh key + register_session_key
-                            ▼
-open_lobby(host_commit)  ───────────►   join_lobby(guest_commit)
-  └─ burns 1 durability                   └─ burns 1 durability
-reveal_secret ──────────────────────►   reveal_secret
-  commit = keccak(secret ‖ player ‖ match_id)
-                            ▼
-init_match  →  seed = keccak(host_secret ‖ guest_secret ‖ future slot hash ‖ match_id)
-delegate_match  →  MatchState moves to the MagicBlock ephemeral rollup (EU validator)
-                            ▼
-        turns execute on the rollup — no wallet prompts
-        ├─ pull_trigger → chamber fires, HP damage
-        ├─ play_card    → HawkEye, Blocker, DoubleStrike, …
-        └─ next turn
-                            ▼
-commit_and_undelegate_match  →  state returns to L1
-settle_match  →  fixed reward from the treasury PDA to the winner
-sweepSession  →  the leftover SOL on the session key goes back to the wallet
+Requirements: Rust (stable, 1.96 tested), `cargo-near` 0.23.0, Node 20+, pnpm 10.33.2. `docs/near/VERSIONS.md` lists every pinned version.
+
+### 1. Build the contract WASM
+
+```bash
+cd contracts/rolet-near
+cargo near build non-reproducible-wasm --no-abi
+# output: target/near/rolet_near.wasm
 ```
 
-`Player A` and `Player B` are interchangeable after the lobby opens; either seat can drive the match forward.
+Result on the submitted commit: build succeeds, `rolet_near.wasm` is about 342 KB.
 
----
+### 2. Contract tests (unit + near-workspaces sandbox)
 
-## Architecture
-
-```mermaid
-graph TD
-    subgraph L1["Solana L1 · Devnet"]
-        PP[PlayerProfile PDA]
-        LS[LobbyState PDA]
-        MS[MatchState PDA]
-        GV[GameVault PDA<br/>+ SOL treasury]
-    end
-
-    subgraph ER["MagicBlock Ephemeral Rollup · EU"]
-        MSR[MatchState · delegated copy]
-    end
-
-    subgraph Frontend["Next.js"]
-        UR[useRolet · Anchor client]
-        SK[Session keypair]
-        CR[Commit-reveal · keccak256]
-    end
-
-    Q[Match queue · in-memory] -.introduces the two wallets.-> LS
-    Host -->|open_lobby + reveal_secret| LS
-    Guest -->|join_lobby + reveal_secret| LS
-    Either -->|init_match| MS
-    MS -->|delegate_match| MSR
-    MSR -->|turns| MSR
-    MSR -->|commit_and_undelegate| MS
-    MS -->|settle_match| GV
-    GV -->|reward SOL| Winner
-
-    SK -->|signs every game instruction| UR
-    CR -->|seed| MS
+```bash
+cd contracts/rolet-near
+cargo test
 ```
 
-Why the rollup: turns are the hot path. Delegating `MatchState` puts them on a sub-second rollup, while the lobby, the character economy and the payout stay on L1 where the money lives. Only one account is delegated, on purpose.
+The integration tests deploy `target/near/rolet_near.wasm` into a local NEAR sandbox, so build the WASM first (step 1). Result on the submitted commit: 136 unit tests and 9 sandbox integration tests pass (a full match, the function-call key flow, timeouts, gas floors, a full 100-entry leaderboard, NFT transfer refunds). `vectors_export` is `#[ignore]`d; it only regenerates `docs/near/schema/vectors.json`.
 
----
-
-## On-chain Instructions
-
-| Instruction | Description |
-|---|---|
-| `set_character_nft` | Equip a validated Metaplex Core character on the profile (unpaid path) |
-| `purchase_character` | Charge `character_price_sol`; split 5% ops / 95% treasury; equip the character |
-| `register_session_key` | Store the ephemeral pubkey and its expiry on `PlayerProfile` |
-| `open_lobby` | Host creates `LobbyState` with `host_commit`; burns 1 durability |
-| `join_lobby` | Guest submits `guest_commit` only (no secret); burns 1 durability |
-| `reveal_secret` | Either seat reveals a secret bound to its pubkey and `match_id` |
-| `init_match` | After both reveals, seeds from a future slot hash and creates `MatchState` |
-| `delegate_match` | Moves `MatchState` to the ephemeral rollup (owner becomes the delegation program) |
-| `pull_trigger` | Fire the current chamber; apply HP damage |
-| `play_card` | Resolve one of 12 tactical cards |
-| `commit_and_undelegate_match` | Commits the rollup copy and returns `MatchState` to the program |
-| `settle_match` | Pay the fixed `reward_sol` from the treasury PDA to the winner |
-| `claim_timeout` | If the player to move stalls past `TURN_TIMEOUT_SLOTS`, the waiting player wins |
-| `close_lobby` | Refund durability only before both reveals; after that, rent only |
-
-**Signing model.** Every one of these takes the wallet as an unsigned `authority` (it seeds the PDAs and passes the participant checks) plus a `signer` that may be the wallet's registered session key. `init` pays rent from `signer`, so a funded session key covers lobby and match accounts. This is what turns a match from roughly ten wallet prompts into one.
-
----
-
-## Economy
-
-| Parameter | Value |
-|---|---|
-| Character price | free on devnet (0.1 SOL at launch); 10 durability, each match burns 1 |
-| Purchase split | 5% ops wallet / 95% treasury |
-| Match reward | fixed 0.02 SOL from the treasury PDA |
-| Session funding | 0.02 SOL moved from the wallet into the session key, returned at the end |
-
-No token. Winners are paid in SOL.
-
----
-
-## Stack
-
-| Layer | Tech |
-|---|---|
-| Program | Anchor 1.0.2 · Rust · Solana CLI 3.1.9 |
-| Rollup | MagicBlock `ephemeral-rollups-sdk` 0.17.3 · EU devnet validator |
-| Frontend | Next.js 16 · React 19 · Tailwind v4 |
-| Client | `@coral-xyz/anchor` 0.32 · `@solana/web3.js` · session keypair |
-| Character NFT | Metaplex Core (`@metaplex-foundation/mpl-core`) minted client-side |
-| Wallet | Phantom / Solflare via Wallet Standard |
-| Identity | Bonfida SNS |
-| Queue | One Node process, in-memory — no database, no Redis |
-
----
-
-## Quickstart
-
-**Prerequisites:** Rust, Solana CLI 3.1.9, Anchor 1.0.2, Node 20+, pnpm
+### 3. Web client tests (rules, contract parity, key flow)
 
 ```bash
 pnpm install
-
-cp apps/web/.env.example apps/web/.env.local
-# fill in:
-#   NEXT_PUBLIC_RPC_ENDPOINT=/api/rpc            (the proxy route)
-#   NEXT_PUBLIC_SOLANA_NETWORK=devnet
-#   NEXT_PUBLIC_ROLET_PROGRAM_ID=mspQcUFhmAGYUsnBbcUndhaZiris53KtwYCjDHU91oH
-#   NEXT_PUBLIC_MAGICBLOCK_ER_ENDPOINT=https://devnet-eu.magicblock.app
-#   RPCFAST_BACKEND_URL=<your RPC provider's devnet URL>
-#   RPCFAST_API_KEY=<your key>
-
-cd apps/web
-pnpm build && pnpm start --port 3001
+pnpm --filter web test
+pnpm --filter web exec tsc --noEmit
 ```
 
-Open `http://localhost:3001`, set the wallet to **Devnet**, and take a character at `/profile` before your first match. Devnet characters are free; the vault price is what gates them at launch.
+Result on the submitted commit: `117` tests, `117` passed, `0` failed. `tsc --noEmit` exits `0`.
 
-Both players need a character and some devnet SOL. The queue lives in one Node process, so run a single instance — it will not work behind a platform that spreads requests across isolates.
-
-### Build and deploy the program
+### 4. Deploy to testnet (optional, needs funded testnet accounts)
 
 ```bash
-cd apps/server
-PATH="$HOME/.local/share/solana/install/releases/3.1.9/bin:$PATH" ~/.avm/bin/anchor-1.0.2 build
+cd contracts/rolet-near
+# preview, touches nothing on chain
+ROLET_CONTRACT_ID=rolet.<you>.testnet ROLET_OWNER_ID=<you>.testnet ./scripts/deploy-testnet.sh --dry-run
+# real deploy: build, deploy with init-config.json values, fund the treasury, check get_config
+ROLET_CONTRACT_ID=rolet.<you>.testnet ROLET_OWNER_ID=<you>.testnet ./scripts/deploy-testnet.sh
 
-solana program deploy target/deploy/rolet.so \
-  --program-id target/deploy/<your-keypair>.json \
-  --keypair ~/.config/solana/id.json \
-  --url https://api.devnet.solana.com
+# full match between two testnet accounts
+ROLET_CONTRACT_ID=rolet.<you>.testnet PLAYER_A=alice.<you>.testnet PLAYER_B=bob.<you>.testnet ./scripts/cli-match.sh
 ```
 
-If the new binary is less than 10 KB larger than the deployed one, `solana program deploy` refuses and asks for a minimum extension; grow the account first:
+After the deploy, `get_config` should return `load_size: 8`, `min_live: 2`, `max_live: 6`, `max_items: 4`. A finished CLI match logs a `MatchEnded` NEP-297 event, and the winner receives the 0.1 NEAR reward.
 
-```bash
-solana program extend <PROGRAM_ID> 20480 --url https://api.devnet.solana.com
-```
+### 5. Try the function-call key flow in the browser
 
-Bootstrap the vault once (`reward_sol`, `character_price_sol`, ops wallet, treasury), then fund the treasury PDA so rewards can be paid.
+Put the deployed contract ID in `apps/web/.env.local` as `NEXT_PUBLIC_NEAR_NETWORK=testnet` and `NEXT_PUBLIC_ROLET_CONTRACT=...`, run `pnpm --filter web dev`, and open http://localhost:3000/dev/near-key. Sign in with MyNearWallet or Meteor, and the page signs `join` and `fire` with the function-call key.
 
 ---
 
-## Repo Layout
+## Game values (`contracts/rolet-near/init-config.json`)
+
+| Value | Setting |
+|---|---|
+| HP per round | 4 |
+| Revolver | 8 chambers, 2–6 live rounds at random, live count announced at load |
+| Rounds | best of 3 (heal cut at 2 HP in the last round) |
+| Hand | up to 4 item cards, 4 dealt per load |
+| Deck | shared, 9 item types × 4 copies |
+| Items | Loupe, Pipe, Flask, Shackle, Hacksaw, Ticker, Magnet, Lockpick, Tincture |
+| Character NFT price | 1 NEAR |
+| Winner reward | 0.1 NEAR from the treasury |
+| Turn / reveal timeout | 45 s / 60 s |
+
+## Repository layout
 
 ```
-rolet/
-├── apps/
-│   ├── server/
-│   │   ├── programs/rolet/src/lib.rs     # Anchor program
-│   │   ├── Anchor.toml                   # toolchain: anchor 1.0.2, solana 3.1.9
-│   │   ├── scripts/bootstrap-vault.ts    # one-time vault setup
-│   │   └── target/idl/rolet.json         # generated IDL (copied into the web app)
-│   └── web/
-│       ├── app/                          # routes: /, /duel, /profile, /leaderboard
-│       ├── app/api/rpc/route.ts          # RPC proxy, rate limited per IP
-│       ├── app/api/matchmaking/route.ts  # the in-memory queue
-│       ├── components/DuelRoom3D.tsx     # the chamber room: geometry, lights, display pass
-│       ├── components/                   # landing sections, duel HUD, nav
-│       ├── public/character/             # Core metadata + seat image
-│       ├── public/sounds/                # match cues
-│       ├── hooks/useRolet.ts             # Anchor client, session keys, all game calls
-│       ├── lib/chainPace.ts              # pure rules (seat, launch gate, turns, limits)
-│       ├── lib/chainPace.test.ts         # node:test unit suite
-│       └── idl/rolet.json                # IDL the client loads
-├── Dockerfile                            # single-replica image for Railway
-└── railway.json                          # deploy config
+contracts/rolet-near/   NEAR contract (Rust, near-sdk) + tests + testnet scripts   [hackathon]
+apps/web/lib/near*.ts   NEAR client: RPC, wallet selector, function-call key, calls  [hackathon]
+apps/web/lib/game/      TS rules engine, contract parity, practice mode, bot         [hackathon]
+apps/web/lib/stage/     scene <-> game protocol for the 2.5D scene                   [hackathon]
+docs/near/              design, plans, audits and reports (dev notes, mostly in Turkish) [hackathon]
+apps/web/ (rest), packages/, godot/   Solana-era client, shared package, Godot prototype [baseline]
+docs/solana-README.md   the original Solana README                                   [baseline]
 ```
 
----
+## Libraries
 
-## Tests
+- Contract: `near-sdk` 5.30.2, `near-contract-standards` 5.30.2, `borsh`. Tests use `near-workspaces` 0.24.0, `tokio` and `sha2`.
+- Client: `@near-js/*` 2.5.1 (accounts, crypto, providers, signers, transactions), `@near-wallet-selector/*` 10.1.4 (MyNearWallet, Meteor), `@noble/hashes`, Next.js 16, React 19, `three` / `@react-three/fiber` / `@react-three/drei`, `gsap`, `tsx` for tests.
+- The 3D revolver model was generated with Meshy.
 
-Pure game rules are unit-tested with `node:test`:
+## How this was built (AI disclosure)
 
-```bash
-cd apps/web
-../../apps/server/node_modules/.bin/tsx --test lib/chainPace.test.ts lib/seat.test.ts lib/matchQueue.test.ts
-```
+Built with AI coding assistants (Claude Code, Gemini via Antigravity, Command Code) under my direction. I wrote the design, rules and task plans (`docs/near/DESIGN.md`, `TASKS.md`, `PLAN-*.md`). Most of the code was written by those assistants and checked through audit and fix rounds (`docs/near/AUDIT-*.md`, `FIX-*-REPORT.md`) and the test suites above.
 
-Covered: queue states, seat decisions, reveal gating, launch readiness, session funding and sweeping, RPC backoff, payout protection against a fresh match, and the rollup routing decision.
+## Other project by the same builder
 
----
-
-## Rendering
-
-The duel is not a picture of a table. `DuelRoom3D.tsx` builds the room from flat-shaded primitives behind two barn-door reflectors, renders it into a 0.72× buffer, and passes the result through one display shader: ordered Bayer dither, posterise to seven levels, grain, vignette and a two-tone grade that lifts the shadows cold and leaves the highlights brass. Nothing in the room carries a photo texture on purpose — the banding and the grain are added, so surfaces cannot go mushy the way generated maps do.
-
----
-
-## Known Limitations
-
-- **The queue is one process.** It holds pairings in memory, so it must run as a single instance. A multi-instance host would split the queue across isolates; a shared store is the fix if this ever needs to scale horizontally.
-- **`claim_timeout` is unusable while a match is delegated.** It compares the last action slot with the rollup clock, whose slot numbers are not base-layer slots. A timeout path for delegated matches needs its own accounting.
-- **Session leftovers need the tab to stay open.** `sweepSession` returns the session key's remaining SOL to the wallet on a timer after the match ends. If the player closes the tab immediately, that key keeps its balance.
-- **Character ownership is self-attested.** The program validates a Core asset by checking that its `update_authority` equals the program ID, and the client writes that field at mint time. A program-signed mint (CPI) or a program-owned Core collection check is the production fix.
-- **Public devnet RPC throttles.** `api.devnet.solana.com` answers 429 under match traffic. The client now backs off and retries, but a dedicated devnet endpoint (`RPCFAST_BACKEND_URL`) is the real fix.
-- **Devnet only.** The program, the vault and the characters live on devnet.
-
----
+I am also submitting **[Bondline](https://github.com/SmtDcs/Bondline)** to NEAR HACKATHON, a separate and independent project. It makes refund promises from AI support bots binding: each bot reply is signed inside a NEAR AI TEE, and a NEAR contract pays the customer from the shop's locked bond, up to a cap the shop chose.
 
 ## License
 
-MIT
-
-## Asset Credits
-
-- **Revolver, speed loader, cartridge case** — meshes generated with Meshy AI, retopologised to ~20k triangles each and rendered untextured: the look's grain comes from the display pass, not from maps.
-- **The chamber room** — geometry written in `DuelRoom3D.tsx`: table, rails, reflector lamps, the operator's housing, and the marks painted on the baize.
-- **Seat image** — made for this project.
-- **Sound effects** — CC0/free-license sources bundled in `public/sounds/`.
+MIT. See [LICENSE](LICENSE).
