@@ -72,6 +72,7 @@ impl Contract {
     /// Kontratı kurar; `#[init]` makrosu ikinci kurulumu otomatik reddeder.
     #[init]
     pub fn new(owner: AccountId, config: Config) -> Self {
+        config.validate();
         Self {
             owner: owner.clone(),
             config,
@@ -102,6 +103,7 @@ impl Contract {
 
     pub fn set_config(&mut self, config: Config) {
         self.assert_owner();
+        config.validate();
         self.config = config;
     }
 
@@ -208,5 +210,26 @@ mod tests {
     fn non_owner_cannot_pause_or_unpause() {
         let mut c = setup("owner.testnet", "mallory.testnet");
         c.unpause();
+    }
+
+    #[test]
+    #[should_panic(expected = "ops_bps cannot exceed 10_000")]
+    fn set_config_rejects_invalid_config() {
+        let mut c = setup("owner.testnet", "owner.testnet");
+        let mut bad = Config::default();
+        bad.ops_bps = 10_001;
+        c.set_config(bad);
+    }
+
+    #[test]
+    #[should_panic(expected = "rounds must have length 3")]
+    fn init_rejects_invalid_config() {
+        let ctx = VMContextBuilder::new()
+            .predecessor_account_id("deployer.testnet".parse().unwrap())
+            .build();
+        near_sdk::testing_env!(ctx);
+        let mut bad = Config::default();
+        bad.rounds.truncate(2);
+        Contract::new("owner.testnet".parse().unwrap(), bad);
     }
 }

@@ -82,6 +82,8 @@ pub struct Match {
     pub seq: u64,
     /// Son `LOG_CAP` aksiyon (T-114 olaylarıyla birebir).
     pub log: Vec<Action>,
+    /// Maç başlangıcında sabitlenen yapılandırma anlık görüntüsü (FIX-06 / S-05).
+    pub config: Config,
 }
 
 /// Oyuncu başına kayıt (DESIGN §4.5 `PlayerState`).
@@ -291,7 +293,7 @@ impl Contract {
         // Önce depolama farkını düş, sonra ödülü öde (S-02).
         self.settle_storage(storage_before);
 
-        let reward = self.config.reward;
+        let reward = m.config.reward;
         if reward > NearToken::ZERO {
             let winner_account = &m.players[winner as usize];
             let payable_free = self.free_balance().saturating_sub(self.ops_balance);
@@ -323,10 +325,10 @@ impl Contract {
         let actor = participant_index(&m, &player) as u8;
 
         let actions = match src_override {
-            Some(src) => step(&mut m.game, &self.config, actor, src),
+            Some(src) => step(&mut m.game, &m.config, actor, src),
             None => {
                 let mut src = ChainSource::new(m.seed, &mut m.draw_nonce);
-                step(&mut m.game, &self.config, actor, &mut src)
+                step(&mut m.game, &m.config, actor, &mut src)
             }
         }
         .unwrap_or_else(|e| panic!("{e}"));
@@ -342,7 +344,7 @@ impl Contract {
         if let Some(winner) = match_winner {
             self.finish_match(&mut m, winner, storage_before);
         } else {
-            m.deadline_ms = now_ms() + self.config.turn_ms;
+            m.deadline_ms = now_ms() + m.config.turn_ms;
             self.matches.insert(&key, &m);
             self.settle_storage(storage_before);
         }
@@ -422,6 +424,7 @@ impl Contract {
                     winner: None,
                     seq: 0,
                     log: Vec::new(),
+                    config: self.config.clone(),
                 };
                 self.lock_in(&player, match_id, &key, &token_id);
                 self.matches.insert(&key, &m);
@@ -434,7 +437,7 @@ impl Contract {
                 m.tokens[1] = token_id.clone();
                 m.commits[1] = commit;
                 m.status = Status::Revealing;
-                m.reveal_deadline_ms = now_ms() + self.config.reveal_ms;
+                m.reveal_deadline_ms = now_ms() + m.config.reveal_ms;
                 self.lock_in(&player, match_id, &key, &token_id);
                 self.matches.insert(&key, &m);
                 self.match_id_index.insert(&match_id, &key);
@@ -492,7 +495,7 @@ impl Contract {
             buf.extend_from_slice(&m.id.to_le_bytes());
             m.seed = env::sha256_array(&buf);
 
-            let rc = self.config.rounds[0].clone();
+            let rc = m.config.rounds[0].clone();
             m.game = GameState {
                 round: 1,
                 score: [0, 0],
@@ -512,7 +515,7 @@ impl Contract {
             };
             m.game.load = load;
             m.status = Status::Active;
-            m.deadline_ms = now_ms() + self.config.turn_ms;
+            m.deadline_ms = now_ms() + m.config.turn_ms;
             let action = Action::LoadStarted {
                 live: m.game.load.announced_live,
                 blank: m.game.load.announced_blank,
@@ -591,7 +594,7 @@ impl Contract {
                 let timeout_action = Action::TimeoutClaimed { by };
                 let end_action = Action::MatchEnded {
                     winner: by,
-                    reward: self.config.reward.as_yoctonear().into(),
+                    reward: m.config.reward.as_yoctonear().into(),
                 };
                 push_action(&mut m, timeout_action.clone());
                 push_action(&mut m, end_action.clone());
@@ -1716,6 +1719,59 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ab.status, Status::Active);
+        c.assert_solvent();
+    }
+
+    // ------------------------------------------------------------------
+    // FIX-06: Config snapshot (S-05)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn set_config_after_join_does_not_affect_active_match() {
+        let mut c = setup_active();
+        let treasury_before = c.treasury;
+
+        // Owner maç sırasında tüm oyun/ödül/süre ayarlarını değiştirir.
+        owner_ctx();
+        let mut new_cfg = Config::default();
+        new_cfg.turn_ms = 120_000;
+        new_cfg.reveal_ms = 120_000;
+        new_cfg.rounds[1].start_hp = 8;
+        new_cfg.reward = NearToken::from_millinear(10);
+        c.set_config(new_cfg);
+
+        // Mevcut maç R1'den R2'ye geçerken ve biterken kendi snapshot'ını kullanır.
+        let mut m = c.match_or_panic(7);
+        m.game.load = Load::new(2, 2);
+        m.game.turn = 0;
+        c.save_match(&m);
+
+        let mut src = ScriptedSource::new(vec![
+            Shell::Live,
+            Shell::Blank,
+            Shell::Live, // R1 2 dmg -> R2 başlamalı (snapshot R2 HP = 4, 8 değil)
+        ]);
+        switch_at("alice.testnet", NearToken::ZERO, 2_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+        switch_at("bob.testnet", NearToken::ZERO, 3_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+        switch_at("alice.testnet", NearToken::ZERO, 4_000);
+        c.fire_with(U64(7), Target::Opponent, &mut src);
+
+        let after_r1 = c.match_or_panic(7);
+        assert_eq!(after_r1.game.round, 2);
+        assert_eq!(after_r1.game.max_hp, 4);
+        assert_eq!(after_r1.deadline_ms, 4_000 + 45_000);
+
+        // Maç timeout ile bitsin → ödül 100 mNEAR (snapshot), 10 mNEAR değil.
+        let non_turn = after_r1.players[1 - after_r1.game.turn as usize].to_string();
+        switch_at(&non_turn, NearToken::ZERO, after_r1.deadline_ms);
+        let actions = c.claim_timeout(U64(7));
+        assert!(actions.contains(&Action::MatchEnded {
+            winner: 1 - after_r1.game.turn,
+            reward: NearToken::from_millinear(100).as_yoctonear().into(),
+        }));
+        assert!(treasury_before.saturating_sub(c.treasury) >= NearToken::from_millinear(100));
         c.assert_solvent();
     }
 }

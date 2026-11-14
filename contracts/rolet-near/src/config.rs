@@ -75,6 +75,61 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    /// Yapılandırma sınırlarını doğrular (S-05); ihlal varsa hata mesajı döner.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if self.rounds.len() != 3 {
+            return Err("rounds must have length 3");
+        }
+        if self.max_items > 8 {
+            return Err("max_items cannot exceed 8");
+        }
+        for r in &self.rounds {
+            if r.start_hp == 0 || r.start_hp > 8 {
+                return Err("start_hp must be between 1 and 8");
+            }
+            if let Some(cut) = r.heal_cut_at {
+                if cut >= r.start_hp {
+                    return Err("heal_cut_at must be below start_hp");
+                }
+            }
+            if r.items_per_load > self.max_items {
+                return Err("items_per_load cannot exceed max_items");
+            }
+        }
+        if self.tincture_good_pct > 100 {
+            return Err("tincture_good_pct cannot exceed 100");
+        }
+        if self.ops_bps > 10_000 {
+            return Err("ops_bps cannot exceed 10_000");
+        }
+        if self.durability < 1 {
+            return Err("durability must be at least 1");
+        }
+        let max_sustainable = 2u128
+            .saturating_mul(self.price.as_yoctonear())
+            .saturating_mul((10_000 - self.ops_bps) as u128)
+            / (10_000u128 * self.durability as u128);
+        if self.reward.as_yoctonear() > max_sustainable {
+            return Err("reward exceeds sustainable payout bound");
+        }
+        if self.turn_ms < 15_000 {
+            return Err("turn_ms must be at least 15_000");
+        }
+        if self.reveal_ms < self.turn_ms {
+            return Err("reveal_ms must be at least turn_ms");
+        }
+        Ok(())
+    }
+
+    /// `new` ve `set_config` içinde panikle doğrulama yapar (S-05).
+    pub fn validate(&self) {
+        if let Err(msg) = self.check() {
+            near_sdk::env::panic_str(msg);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +173,63 @@ mod tests {
         let json = near_sdk::serde_json::to_string(&c).unwrap();
         let back: Config = near_sdk::serde_json::from_str(&json).unwrap();
         assert_eq!(back, c);
+    }
+
+    #[test]
+    fn validate_accepts_default_and_rejects_all_s05_violations() {
+        assert!(Config::default().check().is_ok());
+
+        let mut bad = Config::default();
+        bad.rounds.pop();
+        assert_eq!(bad.check(), Err("rounds must have length 3"));
+
+        let mut bad = Config::default();
+        bad.rounds[0].start_hp = 0;
+        assert_eq!(bad.check(), Err("start_hp must be between 1 and 8"));
+
+        let mut bad = Config::default();
+        bad.rounds[0].start_hp = 9;
+        assert_eq!(bad.check(), Err("start_hp must be between 1 and 8"));
+
+        let mut bad = Config::default();
+        bad.rounds[2].heal_cut_at = Some(bad.rounds[2].start_hp);
+        assert_eq!(bad.check(), Err("heal_cut_at must be below start_hp"));
+
+        let mut bad = Config::default();
+        bad.max_items = 9;
+        assert_eq!(bad.check(), Err("max_items cannot exceed 8"));
+
+        let mut bad = Config::default();
+        bad.rounds[1].items_per_load = bad.max_items + 1;
+        assert_eq!(bad.check(), Err("items_per_load cannot exceed max_items"));
+
+        let mut bad = Config::default();
+        bad.tincture_good_pct = 101;
+        assert_eq!(bad.check(), Err("tincture_good_pct cannot exceed 100"));
+
+        let mut bad = Config::default();
+        bad.ops_bps = 10_001;
+        assert_eq!(bad.check(), Err("ops_bps cannot exceed 10_000"));
+
+        let mut bad = Config::default();
+        bad.durability = 0;
+        assert_eq!(bad.check(), Err("durability must be at least 1"));
+
+        // Varsayılanlarla maks sürdürülebilir ödül: 2 * 1 * 0.95 / 10 = 0.19 NEAR.
+        let mut bad = Config::default();
+        bad.reward = NearToken::from_millinear(191);
+        assert_eq!(bad.check(), Err("reward exceeds sustainable payout bound"));
+
+        let mut ok = Config::default();
+        ok.reward = NearToken::from_millinear(190);
+        assert!(ok.check().is_ok());
+
+        let mut bad = Config::default();
+        bad.turn_ms = 14_999;
+        assert_eq!(bad.check(), Err("turn_ms must be at least 15_000"));
+
+        let mut bad = Config::default();
+        bad.reveal_ms = bad.turn_ms - 1;
+        assert_eq!(bad.check(), Err("reveal_ms must be at least turn_ms"));
     }
 }
