@@ -1,18 +1,5 @@
 {
-  "name": "HANDLER_ERROR",
-  "cause": {
-    "name": "INVALID_TRANSACTION",
-    "info": {
-      "InvalidTxError": {
-        "InvalidAccessKeyError": {
-          "NotEnoughAllowance": {
-            "account_id": "alice.test.near",
-            "public_key": "ed25519:5z3F8tV6k...",
-            "allowance": "1",
-            "cost": "6000000000000000000000"
-          }
-        }
-      }
-    }
-  }
+  "name": "Error",
+  "type": "NotEnoughAllowance",
+  "message": "Access Key {account_id}:{public_key} does not have enough balance 0.000000000000000000000001 for transaction costing 0.020919033553332"
 }

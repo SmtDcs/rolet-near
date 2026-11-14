@@ -50,7 +50,7 @@ test("sendGameCall succeeds and returns parsed outcome with actions", async () =
   assert.equal(res.events.length, 2);
   assert.equal(res.events[0].kind, "Shot");
   assert.deepEqual(seenNonces, [BigInt(11)]);
-  assert.equal(res.txHash, "8u1firetxhash");
+  assert.equal(res.txHash, (fireOutcome as { transaction: { hash: string } }).transaction.hash);
 });
 
 test("sendGameCall retries up to 3 times on InvalidNonce and throws on 4th failure", async () => {

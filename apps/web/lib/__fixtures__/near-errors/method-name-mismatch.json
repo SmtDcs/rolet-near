@@ -1,15 +1,5 @@
 {
-  "name": "HANDLER_ERROR",
-  "cause": {
-    "name": "INVALID_TRANSACTION",
-    "info": {
-      "InvalidTxError": {
-        "InvalidAccessKeyError": {
-          "MethodNameMismatch": {
-            "method_name": "claim_reward"
-          }
-        }
-      }
-    }
-  }
+  "name": "Error",
+  "type": "MethodNameMismatch",
+  "message": "Transaction method name claim_reward isn't allowed by the access key"
 }
