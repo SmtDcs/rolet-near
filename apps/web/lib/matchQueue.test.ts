@@ -1,155 +1,112 @@
 import assert from "node:assert/strict";
-import { createPrivateKey, sign } from "node:crypto";
 import test from "node:test";
-import { Keypair } from "@solana/web3.js";
 import {
   createQueue,
   enterQueue,
+  isValidNearAccount,
   leaveQueue,
-  markOpened,
   parseQueueMessage,
   queueMessage,
-  reduceQueueView,
   statusQueue,
 } from "./matchQueue";
-import { verifyQueueSignature } from "./queueSignature";
 
-const A = "11111111111111111111111111111111";
-const B = "22222222222222222222222222222222";
-const C = "33333333333333333333333333333333";
+const ALICE = "alice.testnet";
+const BOB = "bob-1_2.testnet";
+const IMPLICIT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-test("the first wallet waits and the second becomes the guest", () => {
+test("isValidNearAccount enforces NEAR account syntax and 2..64 length", () => {
+  assert.equal(isValidNearAccount("ab"), true);
+  assert.equal(isValidNearAccount(ALICE), true);
+  assert.equal(isValidNearAccount(BOB), true);
+  assert.equal(isValidNearAccount(IMPLICIT), true);
+
+  assert.equal(isValidNearAccount("a"), false);
+  assert.equal(isValidNearAccount("a".repeat(65)), false);
+  assert.equal(isValidNearAccount("Alice.testnet"), false);
+  assert.equal(isValidNearAccount(".alice.testnet"), false);
+  assert.equal(isValidNearAccount("alice..testnet"), false);
+  assert.equal(isValidNearAccount("alice.testnet."), false);
+  assert.equal(isValidNearAccount("-alice.testnet"), false);
+  assert.equal(isValidNearAccount("alice.testnet!"), false);
+});
+
+test("first account waits and second creates symmetric paired view for both", () => {
   const q = createQueue();
-  const first = enterQueue(q, A, 1_000);
+  const first = enterQueue(q, ALICE, 1_000);
   assert.equal(first.view.status, "waiting");
-  const second = enterQueue(q, B, 2_000);
-  assert.equal(second.view.status, "guest");
-  assert.equal(second.view.opened, false);
-  const host = statusQueue(q, first.token, 2_100);
-  assert.equal(host?.status, "host");
-  if (host?.status !== "host" || second.view.status !== "guest") return;
-  assert.equal(host.matchId, second.view.matchId);
+
+  const second = enterQueue(q, BOB, 2_000);
+  assert.equal(second.view.status, "paired");
+  if (second.view.status !== "paired") return;
+  assert.equal(second.view.opponent, ALICE);
+  assert.ok(/^\d+$/.test(second.view.matchId));
+
+  const firstView = statusQueue(q, first.token, 2_100);
+  assert.equal(firstView?.status, "paired");
+  if (firstView?.status !== "paired") return;
+  assert.equal(firstView.opponent, BOB);
+  assert.equal(firstView.matchId, second.view.matchId);
   assert.equal(q.pairs.length, 1);
   assert.equal(q.waiters.length, 0);
 });
 
-test("a third wallet waits for the next pair", () => {
+test("a third account waits for the next pair", () => {
   const q = createQueue();
-  enterQueue(q, A, 1_000);
-  enterQueue(q, B, 2_000);
-  const third = enterQueue(q, C, 3_000);
+  enterQueue(q, ALICE, 1_000);
+  enterQueue(q, BOB, 2_000);
+  const third = enterQueue(q, IMPLICIT, 3_000);
   assert.equal(third.view.status, "waiting");
   assert.equal(q.waiters.length, 1);
 });
 
-test("the same wallet cannot sit twice", () => {
+test("same account cannot sit twice and reuses token", () => {
   const q = createQueue();
-  enterQueue(q, A, 1_000);
-  const again = enterQueue(q, A, 1_500);
+  const first = enterQueue(q, ALICE, 1_000);
+  const again = enterQueue(q, ALICE, 1_500);
+  assert.equal(first.duplicate, false);
+  assert.equal(again.duplicate, true);
+  assert.equal(again.token, first.token);
   assert.equal(again.view.status, "waiting");
   assert.equal(q.waiters.length, 1);
 });
 
-test("a stale waiter is dropped", () => {
+test("a stale waiter is dropped and a pair expires after TTL", () => {
   const q = createQueue();
-  enterQueue(q, A, 1_000);
-  const next = enterQueue(q, B, 1_000 + 180_000);
+  enterQueue(q, ALICE, 1_000);
+  const next = enterQueue(q, BOB, 1_000 + 180_000);
   assert.equal(next.view.status, "waiting");
   assert.equal(q.waiters.length, 1);
-  assert.equal(q.waiters[0].wallet, B);
+  assert.equal(q.waiters[0].accountId, BOB);
+
+  const paired = enterQueue(q, ALICE, 182_000);
+  assert.equal(paired.view.status, "paired");
+  const expired = statusQueue(q, paired.token, 182_000 + 180_000);
+  assert.equal(expired?.status, "expired");
 });
 
-test("only the host can mark the bench open", () => {
+test("leaving drops the pair so the peer sees expired", () => {
   const q = createQueue();
-  const host = enterQueue(q, A, 1_000);
-  const guest = enterQueue(q, B, 2_000);
-  assert.equal(markOpened(q, guest.token, 2_500), false);
-  assert.equal(markOpened(q, host.token, 2_500), true);
-  const seen = statusQueue(q, guest.token, 2_600);
-  assert.equal(seen?.status, "guest");
-  if (seen?.status === "guest") assert.equal(seen.opened, true);
+  const first = enterQueue(q, ALICE, 1_000);
+  const second = enterQueue(q, BOB, 2_000);
+  leaveQueue(q, first.token, 2_100);
+  const peerView = statusQueue(q, second.token, 2_200);
+  assert.equal(peerView?.status, "expired");
 });
 
-test("an unopened pair expires", () => {
+test("a status poll keeps the seat alive past the original token lifetime", () => {
   const q = createQueue();
-  const host = enterQueue(q, A, 1_000);
-  enterQueue(q, B, 2_000);
-  const seen = statusQueue(q, host.token, 2_000 + 180_000);
-  assert.equal(seen?.status, "expired");
-});
-
-test("leaving before open frees the other seat", () => {
-  const q = createQueue();
-  const host = enterQueue(q, A, 1_000);
-  const guest = enterQueue(q, B, 2_000);
-  leaveQueue(q, host.token, 2_100);
-  const seen = statusQueue(q, guest.token, 2_200);
-  assert.equal(seen?.status, "expired");
-});
-
-test("the second wallet does not kick the first session", () => {
-  const q = createQueue();
-  const first = enterQueue(q, A, 1_000);
-  enterQueue(q, B, 2_000);
-  const seen = statusQueue(q, first.token, 2_100);
-  assert.equal(seen?.status, "host");
-  assert.equal(reduceQueueView(seen).leave, false);
-  assert.equal(reduceQueueView(seen).phase, "offer-open");
-});
-
-test("sitting again does not replace the first session token", () => {
-  const q = createQueue();
-  const first = enterQueue(q, A, 1_000);
-  const again = enterQueue(q, A, 1_500);
-  assert.equal(first.duplicate, false);
-  assert.equal(again.duplicate, true);
-  assert.equal(again.token, first.token);
-  const seen = statusQueue(q, first.token, 1_600);
-  assert.equal(seen?.status, "waiting");
-});
-
-test("a status poll keeps the seat past the original token lifetime", () => {
-  const q = createQueue();
-  const first = enterQueue(q, A, 0);
+  const first = enterQueue(q, ALICE, 0);
   let now = 0;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 5; i += 1) {
     now += 150_000;
     const seen = statusQueue(q, first.token, now);
     assert.equal(seen?.status, "waiting", `poll ${i}`);
   }
 });
 
-test("a failed bench open is not a reason to leave", () => {
-  const step = reduceQueueView({ status: "host", matchId: "42", opened: false });
-  assert.equal(step.leave, false);
-  assert.equal(step.phase, "offer-open");
-  assert.equal(step.matchId, "42");
-});
-
-test("the guest sees the opponent before the bench is open, then gets a sit action", () => {
-  const waiting = reduceQueueView({ status: "guest", matchId: "42", opened: false });
-  assert.equal(waiting.phase, "opponent");
-  assert.equal(waiting.leave, false);
-  assert.notEqual(waiting.phase, reduceQueueView({ status: "waiting" }).phase);
-  const sit = reduceQueueView({ status: "guest", matchId: "42", opened: true });
-  assert.equal(sit.phase, "offer-sit");
-  assert.equal(sit.leave, false);
-});
-
-test("a wallet signature matches the queue message", () => {
-  const kp = Keypair.generate();
-  const message = queueMessage(kp.publicKey.toBase58(), 5_000);
-  const key = createPrivateKey({
-    key: Buffer.concat([
-      Buffer.from("302e020100300506032b657004220420", "hex"),
-      Buffer.from(kp.secretKey.slice(0, 32)),
-    ]),
-    format: "der",
-    type: "pkcs8",
-  });
-  const signature = sign(null, Buffer.from(message), key);
-  const ok = verifyQueueSignature(message, signature, 5_000);
-  assert.equal(ok?.wallet, kp.publicKey.toBase58());
-  assert.equal(verifyQueueSignature(message, signature, 5_000 + 121_000), null);
+test("queueMessage and parseQueueMessage validate NEAR accounts", () => {
+  const msg = queueMessage(ALICE, 123_456);
+  assert.deepEqual(parseQueueMessage(msg), { accountId: ALICE, at: 123_456 });
+  assert.equal(parseQueueMessage("ROLET queue\nInvalid.NEAR\n123"), null);
   assert.equal(parseQueueMessage("nope"), null);
 });

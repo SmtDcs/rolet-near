@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitPlan } from "@/lib/chainPace";
 
-const UPSTREAM_RPC = process.env.RPCFAST_BACKEND_URL ?? "https://api.devnet.solana.com";
-const RPCFAST_API_KEY = process.env.RPCFAST_API_KEY ?? "";
+const DEFAULT_NEAR_RPC = "https://rpc.testnet.near.org";
+
+function resolveUpstreamRpc(): string {
+  const fromEnv =
+    process.env.NEAR_RPC_URL ?? process.env.NEXT_PUBLIC_NEAR_RPC_URL;
+  return (fromEnv ?? "").trim() || DEFAULT_NEAR_RPC;
+}
 
 /**
  * A match makes a few dozen calls a minute, so this stays clear of real play
@@ -30,10 +35,8 @@ function prune(now: number) {
 }
 
 /**
- * Thin JSON-RPC proxy so the browser never talks to RPC Fast directly
- * (their Beam product doesn't set CORS headers for browser origins).
- * The frontend sends requests to /api/rpc, and this route forwards them
- * server-side to the real RPC endpoint.
+ * Thin JSON-RPC proxy so the browser talks to same-origin /api/rpc and this
+ * route forwards requests server-side to the configured NEAR RPC endpoint.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -52,19 +55,17 @@ export async function POST(req: NextRequest) {
     if (!plan.allow) {
       return NextResponse.json(
         { jsonrpc: "2.0", error: { code: -32005, message: "Too many requests" }, id: null },
-        { status: 429 }
+        { status: 429 },
       );
     }
 
     const body = await req.text();
-
-    const upstreamHeaders: Record<string, string> = { "Content-Type": "application/json" };
-    if (RPCFAST_API_KEY) upstreamHeaders["X-Token"] = RPCFAST_API_KEY;
+    const upstreamRpc = resolveUpstreamRpc();
 
     const send = () =>
-      fetch(UPSTREAM_RPC, {
+      fetch(upstreamRpc, {
         method: "POST",
-        headers: upstreamHeaders,
+        headers: { "Content-Type": "application/json" },
         body,
       });
     let upstream: Response;
@@ -86,12 +87,11 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return NextResponse.json(
       { jsonrpc: "2.0", error: { code: -32000, message: String(err) }, id: null },
-      { status: 502 }
+      { status: 502 },
     );
   }
 }
 
-// Handle CORS preflight
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,

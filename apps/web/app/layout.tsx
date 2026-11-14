@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { SolanaProvider } from "@/components/SolanaProvider";
+import { NearProvider } from "@/components/NearProvider";
 import "./globals.css";
 
 // Every family is served from ./fonts. next/font/google resolves its files over
@@ -58,8 +58,8 @@ const plexMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "ROLET — Tactical PvP Duel Protocol on Solana",
-  description: "8 chambers. Paper cards. Dark workshop. Provably fair turn-based PvP on Solana.",
+  title: "ROLET — Tactical PvP Duel Protocol on NEAR",
+  description: "8 chambers. Paper cards. Dark workshop. Provably fair turn-based PvP on NEAR.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -69,7 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${cormorant.variable} ${spaceMono.variable} ${inter.variable} ${bigShoulders.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
       <body className="relative min-h-screen bg-[#060919] text-[#e2e8f0] font-sans antialiased overflow-x-hidden selection:bg-[#0077b6] selection:text-[#ffffff]">
-        <SolanaProvider>{children}</SolanaProvider>
+        <NearProvider>{children}</NearProvider>
 
         {/* Ambient page glow (legacy, covered by landing root) */}
         <div

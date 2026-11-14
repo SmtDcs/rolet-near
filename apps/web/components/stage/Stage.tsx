@@ -2,10 +2,11 @@
 
 import type { PointerEventHandler, ReactNode, RefObject } from "react";
 import type { CharacterKind, RivalClipId } from "@/lib/stage/assets";
-import { REVOLVER_TABLE_ANCHOR } from "@/lib/stage/layout";
+import type { GunPose, GunPoseId } from "@/lib/stage/gunPoses";
 import { BackgroundLayer } from "./layers/BackgroundLayer";
 import { FxLayer } from "./layers/FxLayer";
 import { HudLayer } from "./layers/HudLayer";
+import { RevolverLayer } from "./layers/RevolverLayer";
 import { RivalLayer } from "./layers/RivalLayer";
 import { TableLayer } from "./layers/TableLayer";
 import { TableSpritesLayer } from "./layers/TableSpritesLayer";
@@ -27,6 +28,8 @@ export interface StageProps {
   deadlineSecondsLeft?: number | null;
   stageRef?: RefObject<HTMLDivElement | null>;
   revolverLayer?: ReactNode;
+  customGunPoses?: Partial<Record<GunPoseId, GunPose>>;
+  overrideGunPose?: GunPose | null;
   onRivalClipEnded?: (clipId: RivalClipId) => void;
   onUseItem?: (slot: number) => void;
   onSelectStealSlot?: (stealSlot: number) => void;
@@ -50,6 +53,8 @@ export function Stage({
   deadlineSecondsLeft = null,
   stageRef,
   revolverLayer,
+  customGunPoses,
+  overrideGunPose,
   onRivalClipEnded,
   onUseItem,
   onSelectStealSlot,
@@ -100,26 +105,21 @@ export function Stage({
           onSelectStealSlot={onSelectStealSlot}
         />
 
-        {/* L4: Revolver layer (3D R3F canvas in F3-11+, clickable mat proxy in F3-10) */}
+        {/* L4: 3D Three.js Revolver layer (with 2D fallback) */}
         {revolverLayer ?? (
-          <div className="pointer-events-none absolute inset-0 z-40">
-            <button
-              type="button"
-              disabled={!hud.canAct || hud.lockpickSlot !== null}
-              onPointerDown={onGunPointerDown}
-              style={{
-                left: `${REVOLVER_TABLE_ANCHOR.x * 100}%`,
-                top: `${REVOLVER_TABLE_ANCHOR.y * 100}%`,
-              }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 border px-4 py-2 font-mono text-[10px] tracking-[0.16em] uppercase transition ${
-                hud.canAct && hud.lockpickSlot === null
-                  ? "pointer-events-auto cursor-grab border-[#c6a15b] bg-[#1b1610]/90 text-[#e5c378] hover:border-[#fff]"
-                  : "pointer-events-none border-[#3a3226] bg-[#120f0b]/70 text-[#73644e]"
-              }`}
-            >
-              8-HAZNELİ REVOLVER ({visual.gunHolder})
-            </button>
-          </div>
+          <RevolverLayer
+            gunHolder={visual.gunHolder}
+            gunAim={visual.gunAim}
+            cylinderIndex={visual.cylinderIndex}
+            craneOpen={visual.craneOpen}
+            hammerCocked={visual.hammerCocked}
+            sawActive={visual.sawActive}
+            canPickUp={hud.canAct && hud.lockpickSlot === null}
+            paused={paused}
+            customPoses={customGunPoses}
+            overridePose={overrideGunPose}
+            onGunPointerDown={onGunPointerDown}
+          />
         )}
 
         {/* L5: Lighting, muzzle flash, self-hit blackout, vignette */}
