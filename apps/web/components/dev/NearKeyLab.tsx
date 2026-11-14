@@ -171,7 +171,7 @@ export function NearKeyLab() {
     }
 
     init().catch((err) => {
-      appendLog(`WalletSelector init hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`WalletSelector init error: ${err instanceof Error ? err.message : String(err)}`);
     });
 
     return () => {
@@ -238,10 +238,10 @@ export function NearKeyLab() {
       if (accountId && contractId && typeof window !== "undefined") {
         signOutKey(window.localStorage, accountId, contractId);
       }
-      appendLog("Çıkış yapıldı ve saklı FC key silindi.");
+      appendLog("Signed out and the stored FC key was deleted.");
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`Çıkış hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`Sign-out error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -249,7 +249,7 @@ export function NearKeyLab() {
 
   const handleSignInWithMethods = async () => {
     if (!selector || !contractId) {
-      appendLog("Önce kontrat adresini girin.");
+      appendLog("Enter the contract address first.");
       return;
     }
     setBusy(true);
@@ -260,13 +260,13 @@ export function NearKeyLab() {
           contractId,
           methodNames: [...GAME_METHODS],
         });
-        appendLog(`signIn(methodNames) tamamlandı: ${accounts.map((a) => a.accountId).join(", ")}`);
+        appendLog(`signIn(methodNames) completed: ${accounts.map((a) => a.accountId).join(", ")}`);
       } else {
         modal?.show();
       }
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`signIn hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`signIn error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -274,7 +274,7 @@ export function NearKeyLab() {
 
   const handleAddKeyFallback = async () => {
     if (!selector || !accountId || !contractId || typeof window === "undefined") {
-      appendLog("Bağlı hesap ve kontrat gerekli.");
+      appendLog("Connected account and contract are required.");
       return;
     }
     setBusy(true);
@@ -300,11 +300,11 @@ export function NearKeyLab() {
         createdAt: Date.now(),
         allowanceYocto: FC_ALLOWANCE_YOCTO,
       });
-      const txHash = outcome?.transaction?.hash ?? "(bilinmiyor)";
-      appendLog(`Yedek AddKey başarılı (${kp.publicKey}), tx: ${txHash}`);
+      const txHash = outcome?.transaction?.hash ?? "(unknown)";
+      appendLog(`Fallback AddKey succeeded (${kp.publicKey}), tx: ${txHash}`);
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`AddKey hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`AddKey error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -312,7 +312,7 @@ export function NearKeyLab() {
 
   const handleBuyCharacter = async () => {
     if (!selector || !accountId || !contractId) {
-      appendLog("Bağlı hesap ve kontrat gerekli.");
+      appendLog("Connected account and contract are required.");
       return;
     }
     setBusy(true);
@@ -338,7 +338,7 @@ export function NearKeyLab() {
         `buy_character(${charKind}) tx: ${outcome?.transaction?.hash ?? "-"}, token: ${String(parsed?.returnValue ?? "-")}`,
       );
     } catch (err) {
-      appendLog(`buy_character hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`buy_character error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -346,7 +346,7 @@ export function NearKeyLab() {
 
   const getCaller = () => {
     if (!accountId || !contractId || !storedRecord) {
-      throw new Error("Önce FC key oluşturun/saklayın.");
+      throw new Error("Create or store an FC key first.");
     }
     return createGameCaller({
       accountId,
@@ -358,7 +358,7 @@ export function NearKeyLab() {
 
   const handleJoinAndCancel = async () => {
     if (!accountId || !contractId || !opponentInput.trim() || !tokenIdInput.trim()) {
-      appendLog("match_id, rakip ve token_id doldurulmalı.");
+      appendLog("match_id, opponent and token_id are required.");
       return;
     }
     setBusy(true);
@@ -382,7 +382,7 @@ export function NearKeyLab() {
       appendLog(`cancel tx: ${cancelRes.txHash}`);
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`join→cancel hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`join→cancel error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -390,7 +390,7 @@ export function NearKeyLab() {
 
   const handleJoin = async () => {
     if (!accountId || !contractId || !opponentInput.trim() || !tokenIdInput.trim()) {
-      appendLog("match_id, rakip ve token_id doldurulmalı.");
+      appendLog("match_id, opponent and token_id are required.");
       return;
     }
     setBusy(true);
@@ -410,7 +410,7 @@ export function NearKeyLab() {
       appendLog(`join tx: ${res.txHash}`);
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`join hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`join error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -418,7 +418,7 @@ export function NearKeyLab() {
 
   const handleReveal = async () => {
     if (!accountId || !contractId) {
-      appendLog("Bağlı hesap ve kontrat gerekli.");
+      appendLog("Connected account and contract are required.");
       return;
     }
     setBusy(true);
@@ -427,7 +427,7 @@ export function NearKeyLab() {
       const matchId = BigInt(matchIdInput.trim());
       const secret = loadSecret(window.sessionStorage, accountId, contractId, matchId);
       if (!secret) {
-        appendLog("sessionStorage içinde bu maç için secret bulunamadı.");
+        appendLog("No secret found in sessionStorage for this match.");
         return;
       }
       const res = await caller.sendGameCall("reveal", {
@@ -439,7 +439,7 @@ export function NearKeyLab() {
       appendLog(`reveal tx: ${res.txHash}`);
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`reveal hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`reveal error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -461,7 +461,7 @@ export function NearKeyLab() {
       appendLog(`fire(${targetInput}) tx: ${res.txHash}, actions: ${returnedActions.length}`);
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`fire hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`fire error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -481,9 +481,9 @@ export function NearKeyLab() {
         ...(players ? { players } : {}),
       });
       setMatchSnapshot(view ?? null);
-      appendLog(`get_match(${matchIdInput.trim()}): ${view ? view.status : "bulunamadı"}`);
+      appendLog(`get_match(${matchIdInput.trim()}): ${view ? view.status : "not found"}`);
     } catch (err) {
-      appendLog(`get_match hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`get_match error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -491,7 +491,7 @@ export function NearKeyLab() {
 
   const handleMeasureJoinCancel = async () => {
     if (!accountId || !contractId || !storedRecord || !opponentInput.trim() || !tokenIdInput.trim()) {
-      appendLog("Ölçüm için bağlı hesap, FC key, rakip ve token_id gerekli.");
+      appendLog("Measurement needs a connected account, FC key, opponent and token_id.");
       return;
     }
     setBusy(true);
@@ -522,10 +522,10 @@ export function NearKeyLab() {
       const delta =
         before && after ? (BigInt(before) - BigInt(after)).toString() : null;
       setMeasureResult({ before, after, delta });
-      appendLog(`Ölçüm (join→cancel) delta: ${formatYoctoAsNear(delta)}`);
+      appendLog(`Measurement (join→cancel) delta: ${formatYoctoAsNear(delta)}`);
       await refreshKeyStatus();
     } catch (err) {
-      appendLog(`Ölçüm hatası: ${err instanceof Error ? err.message : String(err)}`);
+      appendLog(`Measurement error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
     }
@@ -535,14 +535,14 @@ export function NearKeyLab() {
     <main className="relative z-10 mx-auto max-w-4xl space-y-6 p-6 font-mono text-sm">
       <header className="rounded border border-slate-700 bg-slate-900/80 p-4">
         <h1 className="text-xl font-bold text-amber-300">
-          Rolet NEAR — Dev FC Key Laboratuvarı (T-201 / T-203 / T-204)
+          Rolet NEAR — Dev FC Key Lab (T-201 / T-203 / T-204)
         </h1>
         <p className="mt-1 text-slate-300">
-          Ağ: <strong>{envConfig.networkId}</strong> · RPC:{" "}
+          Network: <strong>{envConfig.networkId}</strong> · RPC:{" "}
           <span className="text-sky-300">{envConfig.rpcUrl}</span>
         </p>
         <label className="mt-3 block text-xs text-slate-400">
-          Kontrat ID (`NEXT_PUBLIC_ROLET_CONTRACT`):
+          Contract ID (`NEXT_PUBLIC_ROLET_CONTRACT`):
           <input
             value={contractInput}
             onChange={(e) => setContractInput(e.target.value)}
@@ -554,7 +554,7 @@ export function NearKeyLab() {
 
       {/* 1. Bağlan / çık */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4">
-        <h2 className="font-bold text-slate-100">1. Bağlan / Çık (MNW & Meteor)</h2>
+        <h2 className="font-bold text-slate-100">1. Connect / Sign Out (MNW & Meteor)</h2>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -562,7 +562,7 @@ export function NearKeyLab() {
             onClick={() => modal?.show()}
             className="rounded bg-amber-500 px-3 py-1.5 font-semibold text-slate-950 disabled:opacity-50"
           >
-            Cüzdan Bağla
+            Connect Wallet
           </button>
           <button
             type="button"
@@ -570,10 +570,10 @@ export function NearKeyLab() {
             onClick={handleSignOut}
             className="rounded border border-slate-600 px-3 py-1.5 text-slate-200 disabled:opacity-50"
           >
-            Çıkış Yap
+            Sign Out
           </button>
           <span className="text-slate-300">
-            Hesap: <strong>{accountId ?? "bağlı değil"}</strong> · Cüzdan:{" "}
+            Account: <strong>{accountId ?? "not connected"}</strong> · Wallet:{" "}
             <strong>{walletId ?? "-"}</strong>
           </span>
         </div>
@@ -582,29 +582,29 @@ export function NearKeyLab() {
       {/* 2. Key durumu */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="font-bold text-slate-100">2. Key Durumu</h2>
+          <h2 className="font-bold text-slate-100">2. Key Status</h2>
           <button
             type="button"
             onClick={() => void refreshKeyStatus()}
             className="rounded border border-slate-600 px-2.5 py-1 text-xs text-slate-200"
           >
-            Yenile
+            Refresh
           </button>
         </div>
         <div className="grid gap-1 text-xs text-slate-300">
-          <div>Saklı publicKey: {storedRecord?.publicKey ?? "yok"}</div>
-          <div>Zincir durumu (view_access_key): {onChainStatus}</div>
-          <div>Karar (decideKeyAction): {decision}</div>
+          <div>Stored publicKey: {storedRecord?.publicKey ?? "none"}</div>
+          <div>Chain status (view_access_key): {onChainStatus}</div>
+          <div>Decision (decideKeyAction): {decision}</div>
           <div>
-            Tarayıcı keystore anahtar adları (yalnızca adlar):{" "}
-            {keystoreKeys.length > 0 ? keystoreKeys.join(", ") : "yok"}
+            Browser keystore key names (names only):{" "}
+            {keystoreKeys.length > 0 ? keystoreKeys.join(", ") : "none"}
           </div>
         </div>
       </section>
 
       {/* 3. signIn(methodNames) ve Yedek AddKey */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
-        <h2 className="font-bold text-slate-100">3. FC Key Edinme</h2>
+        <h2 className="font-bold text-slate-100">3. Obtaining an FC Key</h2>
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
@@ -620,14 +620,14 @@ export function NearKeyLab() {
             onClick={handleAddKeyFallback}
             className="rounded bg-emerald-500 px-3 py-1.5 font-semibold text-slate-950 disabled:opacity-50"
           >
-            Yedek AddKey
+            Fallback AddKey
           </button>
         </div>
       </section>
 
       {/* 4. buy_character */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
-        <h2 className="font-bold text-slate-100">4. buy_character (cüzdan, 1 NEAR)</h2>
+        <h2 className="font-bold text-slate-100">4. buy_character (wallet, 1 NEAR)</h2>
         <div className="flex flex-wrap items-center gap-3">
           <select
             value={charKind}
@@ -651,7 +651,7 @@ export function NearKeyLab() {
 
       {/* 5 & 6. Maç alanları, join -> cancel, join, reveal, fire */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-3">
-        <h2 className="font-bold text-slate-100">5 & 6. FC Key ile Maç Çağrıları</h2>
+        <h2 className="font-bold text-slate-100">5 & 6. Match Calls with FC Key</h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="text-xs text-slate-400">
             match_id
@@ -662,7 +662,7 @@ export function NearKeyLab() {
             />
           </label>
           <label className="text-xs text-slate-400">
-            rakip (opponent)
+            opponent
             <input
               value={opponentInput}
               onChange={(e) => setOpponentInput(e.target.value)}
@@ -746,27 +746,27 @@ export function NearKeyLab() {
 
       {/* 7. Ölç */}
       <section className="rounded border border-slate-700 bg-slate-900/70 p-4 space-y-2">
-        <h2 className="font-bold text-slate-100">7. Allowance Düşüşü Ölçümü</h2>
+        <h2 className="font-bold text-slate-100">7. Allowance Drop Measurement</h2>
         <button
           type="button"
           disabled={busy || !storedRecord}
           onClick={handleMeasureJoinCancel}
           className="rounded border border-amber-400 px-3 py-1.5 text-amber-300 disabled:opacity-50"
         >
-          Ölç (join → cancel)
+          Measure (join → cancel)
         </button>
         {measureResult && (
           <div className="text-xs text-slate-300 space-y-1">
-            <div>Önce: {formatYoctoAsNear(measureResult.before)}</div>
-            <div>Sonra: {formatYoctoAsNear(measureResult.after)}</div>
-            <div>Fark: {formatYoctoAsNear(measureResult.delta)}</div>
+            <div>Before: {formatYoctoAsNear(measureResult.before)}</div>
+            <div>After: {formatYoctoAsNear(measureResult.after)}</div>
+            <div>Delta: {formatYoctoAsNear(measureResult.delta)}</div>
           </div>
         )}
       </section>
 
       {/* Günlük */}
       <section className="rounded border border-slate-800 bg-slate-950 p-4">
-        <h2 className="font-bold text-slate-300">İşlem Günlüğü</h2>
+        <h2 className="font-bold text-slate-300">Transaction Log</h2>
         <ul className="mt-2 space-y-1 text-xs text-slate-400">
           {statusLog.map((entry, idx) => (
             <li key={`${idx}-${entry}`}>{entry}</li>
