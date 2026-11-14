@@ -141,7 +141,7 @@ export function HudLayer({
       )}
 
       <div className="flex items-end justify-between gap-3">
-        <div className="font-mono text-[10px] tracking-[0.25em] text-[#9a9a9a]/70 uppercase [text-shadow:0_1px_6px_#000]">
+        <div className="ml-[18%] font-mono text-[10px] tracking-[0.25em] text-[#9a9a9a]/70 uppercase [text-shadow:0_1px_6px_#000]">
           {showHint
             ? "Pick up the gun, or use an item"
             : waiting
