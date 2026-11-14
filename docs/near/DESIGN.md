@@ -315,7 +315,7 @@ Bitiş: son fire → winner yazılır → ödül otomatik transfer → oyuncular
 `cancel(match_id)`: yalnızca `Pending` iken ilk katılan; durability iade, kilit açılır.
 
 `claim_timeout(match_id)`:
-- Reveal aşamasında: reveal etmeyen tarafa karşı 60 s sonra → maç iptal, **zamanında davranan** tarafın durability'si iade, karşı taraf ceza olarak durability kaybeder (iade yok). Ödül yok.
+- Reveal aşamasında: reveal etmeyen tarafa karşı `reveal_deadline_ms + TIMEOUT_GRACE_MS` (`60 s + 2 s`, FIX-F2-8 yarış koruması) sonra → maç iptal, **zamanında davranan** tarafın durability'si iade, karşı taraf ceza olarak durability kaybeder (iade yok). Ödül yok.
 - Active'de: sıra sahibinin `deadline_ms + TIMEOUT_GRACE_MS` (`2_000 ms`, S-15 yarış koruması) geçtiyse diğer oyuncu çağırır → çağıran maçı kazanır, ödül ödenir.
 - Süre ölçümü `env::block_timestamp_ms()`.
 

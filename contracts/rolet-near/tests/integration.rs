@@ -83,12 +83,20 @@ async fn fast_forward_until_ms(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
     target_ms: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for _ in 0..40 {
+    for _ in 0..100 {
         let now_ms = worker.view_block().await?.timestamp() / 1_000_000;
         if now_ms >= target_ms {
             return Ok(());
         }
-        worker.fast_forward(25).await?;
+        let rem_ms = target_ms - now_ms;
+        let step = if rem_ms > 20_000 {
+            15
+        } else if rem_ms > 5_000 {
+            4
+        } else {
+            1
+        };
+        worker.fast_forward(step).await?;
     }
     panic!("sandbox bloğu hedef zamana ({target_ms} ms) ilerletilemedi");
 }
@@ -907,7 +915,8 @@ async fn fix16_cancel_and_claim_timeout_both_stages() -> Result<(), Box<dyn std:
     assert_eq!(treasury_after_cancel, treasury_before_cancel);
     assert_sandbox_solvent(&contract, expected_ops, 0).await?;
 
-    // 2. Revealing timeout: yalnız Alice açar → reveal_deadline_ms sonrası Alice iade alır, Bob kaybeder.
+    // 2. Revealing timeout (+ TIMEOUT_GRACE_MS): yalnız Alice açar → süre+grace öncesi red,
+    //    sonrası Alice iade alır, Bob kaybeder.
     alice
         .call(contract.id(), "join")
         .args_json(json!({
@@ -945,7 +954,18 @@ async fn fix16_cancel_and_claim_timeout_both_stages() -> Result<(), Box<dyn std:
         .await?
         .json::<Option<MatchView>>()?
         .unwrap();
-    fast_forward_until_ms(&worker, mv_rev.reveal_deadline_ms + 500).await?;
+    fast_forward_until_ms(&worker, mv_rev.reveal_deadline_ms).await?;
+    let early_rev = alice
+        .call(contract.id(), "claim_timeout")
+        .args_json(json!({ "match_id": U64(102) }))
+        .transact()
+        .await?;
+    assert!(
+        early_rev.is_failure(),
+        "grace süresi içinde reveal claim_timeout başarısız olmalı"
+    );
+
+    fast_forward_until_ms(&worker, mv_rev.reveal_deadline_ms + TIMEOUT_GRACE_MS + 500).await?;
 
     let rev_to_res = alice
         .call(contract.id(), "claim_timeout")

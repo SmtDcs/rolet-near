@@ -26,7 +26,7 @@ pub const LOG_CAP: usize = 32;
 /// için >2× güvenlik payı olarak 10 Tgas seçilmiştir.
 pub const MIN_ACTION_GAS: Gas = Gas::from_tgas(10);
 
-/// S-15: son saniye `fire`/`claim_timeout` yarışını önlemek için Active timeout ek süresi (ms).
+/// S-15 / FIX-F2-8: son saniye `reveal`/`fire`/`claim_timeout` yarışını önlemek için ek süre (ms).
 pub const TIMEOUT_GRACE_MS: u64 = 2_000;
 
 /// Maç durumu (DESIGN §4.5). `Pending → Revealing → Active → Finished`, hatalı
@@ -563,11 +563,11 @@ impl Contract {
     }
 
     /// İki aşamalı zaman aşımı talebi (T-113, DESIGN §4.4):
-    /// - `Revealing`: `reveal_deadline_ms` geçtikten sonra açmayan tarafa karşı
-    ///   maç iptal edilir; zamanında açan tarafın durability'si iade edilir,
-    ///   açmayan ceza olarak iade alamaz; ödül ödenmez.
-    /// - `Active`: sıra sahibinin `deadline_ms`i geçtikten sonra diğer oyuncu
-    ///   çağırır → çağıran kazanır, istatistikler yazılır ve ödül ödenir.
+    /// - `Revealing`: `reveal_deadline_ms + TIMEOUT_GRACE_MS` geçtikten sonra açmayan
+    ///   tarafa karşı maç iptal edilir; zamanında açan tarafın durability'si iade edilir,
+    ///   açmayan ceza olarak iade alamaz; ödül ödenmez (FIX-F2-8).
+    /// - `Active`: sıra sahibinin `deadline_ms + TIMEOUT_GRACE_MS`i geçtikten sonra diğer
+    ///   oyuncu çağırır → çağıran kazanır, istatistikler yazılır ve ödül ödenir.
     pub fn claim_timeout(&mut self, match_id: U64) -> Vec<Action> {
         require_direct_call();
         let storage_before = env::storage_usage();
@@ -579,7 +579,10 @@ impl Contract {
 
         match m.status {
             Status::Revealing => {
-                require!(now >= m.reveal_deadline_ms, "reveal timeout not reached");
+                require!(
+                    now >= m.reveal_deadline_ms.saturating_add(TIMEOUT_GRACE_MS),
+                    "reveal timeout not reached"
+                );
                 let other_idx = 1 - caller_idx;
                 // Sadece kendisi açmamışken rakibini cezalandıramaz; ikisi de
                 // açmadıysa kilitleri çözmek için çağrıya izin verilir (iadesiz).
@@ -1362,14 +1365,27 @@ mod tests {
         c
     }
 
-    /// T-113 bitti kuralı: süre dolmadan reveal timeout red.
+    /// T-113 / FIX-F2-8: süre + grace dolmadan reveal timeout red.
     #[test]
     #[should_panic(expected = "reveal timeout not reached")]
     fn reveal_timeout_rejected_before_deadline() {
         let mut c = setup_revealing_at_1000();
         c.reveal(U64(7), secret_of(1));
-        switch_at("alice.testnet", NearToken::ZERO, 60_999);
+        switch_at("alice.testnet", NearToken::ZERO, 61_000 + TIMEOUT_GRACE_MS - 1);
         c.claim_timeout(U64(7));
+    }
+
+    /// FIX-F2-8: `reveal_deadline_ms..reveal_deadline_ms + TIMEOUT_GRACE_MS` ek süresi
+    /// içinde ikinci oyuncunun `reveal` hamlesi kabul edilir ve maç `Active` olur.
+    #[test]
+    fn reveal_succeeds_during_grace_window() {
+        let mut c = setup_revealing_at_1000();
+        c.reveal(U64(7), secret_of(1));
+        switch_at("bob.testnet", NearToken::ZERO, 61_000 + TIMEOUT_GRACE_MS - 1);
+        c.reveal(U64(7), secret_of(2));
+        let mv = c.get_match(U64(7), None).unwrap();
+        assert_eq!(mv.status, Status::Active);
+        c.assert_solvent();
     }
 
     /// T-113 bitti kuralı + S-15: süre + grace dolmadan Active timeout red.
@@ -1405,7 +1421,7 @@ mod tests {
         let mut c = setup_revealing_at_1000();
         c.reveal(U64(7), secret_of(1)); // yalnızca Alice açtı
 
-        switch_at("alice.testnet", NearToken::ZERO, 61_000);
+        switch_at("alice.testnet", NearToken::ZERO, 61_000 + TIMEOUT_GRACE_MS);
         let actions = c.claim_timeout(U64(7));
         assert_eq!(actions, vec![Action::TimeoutClaimed { by: 0 }]);
 
@@ -1426,7 +1442,7 @@ mod tests {
     fn reveal_timeout_rejected_for_non_revealer_against_revealer() {
         let mut c = setup_revealing_at_1000();
         c.reveal(U64(7), secret_of(1)); // Alice açtı
-        switch_at("bob.testnet", NearToken::ZERO, 61_000);
+        switch_at("bob.testnet", NearToken::ZERO, 61_000 + TIMEOUT_GRACE_MS);
         c.claim_timeout(U64(7));
     }
 
@@ -1434,7 +1450,7 @@ mod tests {
     #[test]
     fn reveal_timeout_when_neither_revealed_unsticks_both_without_refund() {
         let mut c = setup_revealing_at_1000();
-        switch_at("bob.testnet", NearToken::ZERO, 61_000);
+        switch_at("bob.testnet", NearToken::ZERO, 61_000 + TIMEOUT_GRACE_MS);
         c.claim_timeout(U64(7));
         assert!(c.get_match(U64(7), None).is_none());
         assert_eq!(c.character_state(&"kuleci:1".to_string()).unwrap().durability, 9);
@@ -1670,7 +1686,7 @@ mod tests {
         c.reveal(U64(77), secret_of(1));
         assert!(c.treasury < t0);
 
-        switch_at("alice.testnet", NearToken::ZERO, 61_000);
+        switch_at("alice.testnet", NearToken::ZERO, 61_000 + TIMEOUT_GRACE_MS);
         c.claim_timeout(U64(77));
         assert_eq!(env::storage_usage(), s0);
         assert_eq!(c.treasury, t0);
