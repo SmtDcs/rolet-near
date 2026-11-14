@@ -55,7 +55,7 @@ Mike Klubnika'nın 2023'te itch.io'da yayınladığı, 2024'te Steam'e (Critical
 ### 2.2 Bir yükleme ("load") döngüsü
 1. Dealer fişekleri masaya dizer: **dolu (kırmızı)** ve **boş/kuru sıkı (mavi-gri)** fişekler karışık sırada, sayıları açıkça görülecek şekilde. Ekranda örn. "2 LIVE, 3 BLANK" bilgisi okunur.
 2. Fişekler toplanır ve pompalı tüfeğe **gizli sırayla** yüklenir. Oyuncu sıralamayı bilmez, sadece toplam sayıları bilir.
-3. Toplam fişek sayısı 2–8 arası, en az 1 dolu ve 1 boş. **[EMİN DEĞİLİM: dağılım; yaklaşık dengeli]**
+3. Toplam fişek sayısı 2–8 arası, en az 1 dolu ve 1 boş. **[Buckshot referansı — Rolet'te 8 gözlü, `min_live..=max_live` (varsayılan `2..=6`), bkz. §3.1 ve `DECISIONS.md` #10]**
 4. Round 2 ve 3'te her yüklemede iki tarafa da eşya dağıtılır: masada bir kutu açılır, oyuncu eşyaları teker teker alıp kendi tarafındaki 8 slotluk ızgaraya yerleştirir. **[EMİN DEĞİLİM: yükleme başına 2 (R2) / 4 (R3) eşya]** Izgara doluysa fazla eşya alınamaz.
 5. Tüfekteki fişekler bitince yeni yükleme yapılır (1. adıma dön). Round, bir tarafın canı bitene kadar sürer.
 

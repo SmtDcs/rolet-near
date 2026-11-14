@@ -13,8 +13,8 @@
 | **FIX-05** · Kayıt silme ve `match_key` | tamam | `95a93ba` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (118 lib + 3 integration) ✓ | Finished kayıtların yaşlandırılarak silinmesi v2/F3 kapsamı |
 | **FIX-06** · `Config::validate` ve maç snapshot'ı | tamam | `f577589` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (122 lib + 3 integration) ✓ | Yok |
 | **FIX-07** · Oyuncu başına kablo (`heal_cut: [bool; 2]`, `HealCut { player }`) | tamam | `ed99cac` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (123 lib + 3 integration) ✓ | Yok |
-| **FIX-08** · Varsayılanlar (`rounds[2].start_hp = 6`, `tincture_good_pct = 50`) | tamam | `adb067d` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (123 lib + 3 integration) ✓ | Yok |
-| **FIX-09** · Yük formülü (DoN `live = max(1, total/2)`, `r1_loads`, `r2_first_load`) | tamam | `a1f227c` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (123 lib + 3 integration) ✓ | Yok |
+| **FIX-08** · Varsayılanlar (`rounds[2].start_hp = 6`, `tincture_good_pct = 50`) | tamam *(VALUES ile değişti)* | `adb067d` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (123 lib + 3 integration) ✓ | VALUES-FIX-01..03 ile güncellendi (`rounds[2].start_hp = 4`, `max_items = 4`, `tincture_good_pct = 50`) |
+| **FIX-09** · Yük formülü (DoN `live = max(1, total/2)`, `r1_loads`, `r2_first_load`) | tamam *(VALUES ile değişti)* | `a1f227c` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (123 lib + 3 integration) ✓ | VALUES ile 8 gözlü + `min_live..=max_live` (`2..=6`) şemasına geçildi |
 | **FIX-10** · Son fişekte Flask (`end_turn()` + testere sıfırlama) | tamam | `134664d` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (123 lib + 3 integration) ✓ | Yok |
 | **FIX-11** · Yeni yükte kelepçe kalkar (`reload`) | tamam | `1ae4c7a` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (124 lib + 3 integration) ✓ | Yok |
 | **FIX-12** · Kural kararları (`DECISIONS.md` #7–#9, `RoundConfig::item_bag`, `Ticker` ≤1) | tamam | `8e9abe1` | `cargo near build non-reproducible-wasm` ✓ · `cargo test` (124 lib + 3 integration) ✓ | Yok |

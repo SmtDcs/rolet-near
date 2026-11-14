@@ -1,5 +1,7 @@
 # Buckshot Roulette kural kontrolü
 
+> **Not:** Bu belge yalnızca Buckshot mekanik referansıdır; sayısal oyun **değerler artık Rolet** (bkz. `DECISIONS.md` #10).
+
 Story Mode R3 canı rastgele 5–6 değil, sabit 6’dır (4 normal + 2 soluk). Kablo, can ≤ 2 olunca kesilir ve iyileştirme durur; soluk canlar yine 0’a kadar sayılır, 2 canlık halde 1 hasar her zaman anında öldürmez.
 
 Hikâye modunda fişek yükü genel bir 2–8 formülü değildir: 1. aşamanın yükleri sabit (1 canlı + 2 boş, sonra 3 canlı + 2 boş), 2. aşamanın ilk yükü 1+1’dir. Double or Nothing’de toplam 2–8, canlı sayısı `max(1, toplam/2)` ile boşlardan fazla olmaz.

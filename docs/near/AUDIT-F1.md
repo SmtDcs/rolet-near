@@ -1,6 +1,7 @@
 # Rolet NEAR — F1 Denetim Raporu
 
 > Tarih: 2026-11-14 · Kapsam: `contracts/rolet-near` (T-101..T-117, `ed84f0b`), `docs/near/{DESIGN,TASKS,DECISIONS,REFERENCE-CHECK}.md`
+> **Not:** Bu denetimden sonra Samet kararıyla **değerler artık Rolet** (G-02 ve G-03 karar #10 ile aşılmıştır; bkz. `DECISIONS.md` #10 ve `AUDIT-FIX.md`).
 > Yöntem: kodu elle okudum, test çalıştırmadım. 110 test fonksiyonu sayıldı (lib 109 + sandbox 1); bu oturumda `cargo test` çalıştırma izni yoktu.
 > Önem: **Kritik** = oyunu ya da parayı doğrudan bozar · **Yüksek** = maçları kilitler ya da fon kaybettirir · **Orta** = koşula bağlı istismar ya da standart ihlali · **Düşük** = kod hijyeni ya da bilinen sınır.
 
